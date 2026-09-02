@@ -20,7 +20,7 @@ class WeightRepository(private val dao: WeightDao) {
 
     suspend fun count(): Int = dao.count()
 
-    /** Records a reading for [date], replacing any existing entry on that day. */
+    // Records a reading for the given date, replacing any existing entry on that day.
     suspend fun record(date: LocalDate, weightLb: Double, note: String? = null) {
         dao.upsert(WeightEntry(epochDay = date.toEpochDay(), weightLb = weightLb, note = note))
     }

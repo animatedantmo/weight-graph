@@ -49,7 +49,7 @@ class WeightConversionTest {
         }
     }
 
-    /** Kept only for a possible future kilogram display; storage itself is pounds. */
+    // Kept only for a possible future kilogram display; storage itself is pounds.
     @Test
     fun kilogramHelpersRoundTrip() {
         assertEquals(178.8, lbFromKg(kgFromLb(178.8)), 1e-9)
