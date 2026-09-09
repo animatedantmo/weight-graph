@@ -80,7 +80,8 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var showEntrySheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    var chartRange by remember { mutableStateOf(ChartRange.ALL) }
+    // Opens on the last week: recent days are what a daily weigh-in is usually checked for.
+    var chartRange by remember { mutableStateOf(ChartRange.WEEK) }
     var customStart by remember { mutableStateOf<LocalDate?>(null) }
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
