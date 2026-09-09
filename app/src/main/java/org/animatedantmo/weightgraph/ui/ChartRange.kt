@@ -53,10 +53,11 @@ import java.time.ZoneOffset
 // explicit start and end dates the user picked.
 enum class ChartRange(val label: String, val days: Long?) {
     WEEK("1W", 7),
+    TWO_WEEKS("2W", 14),
     MONTH("1M", 30),
     YEAR("1Y", 365),
     ALL("All", null),
-    CUSTOM("Custom", null),
+    CUSTOM("Dates", null),
 }
 
 /**
@@ -103,11 +104,11 @@ fun ChartRangeSelector(
                     index = index,
                     count = ChartRange.entries.size,
                 ),
-                // No check icon: with five segments the tick crowds out the labels, and the
+                // No check icon: with six segments the tick crowds out the labels, and the
                 // selected segment is already distinguished by its container colour.
                 icon = {},
             ) {
-                Text(range.label)
+                Text(text = range.label, maxLines = 1)
             }
         }
     }

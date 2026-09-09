@@ -18,10 +18,10 @@ access, no analytics — everything stays on the device.
 - **Scrub to inspect.** Touch and drag across the chart for a vertical crosshair, a red marker
   where it crosses the line, and a readout of that day's exact date and weight. It snaps to real
   readings, so the number shown is always one you recorded.
-- **Range selector** — 1 week, 1 month, 1 year, all, or a custom range. Changing range animates
-  as a zoom rather than cutting to a new view.
-- **Custom ranges** can be typed (slashes are inserted as you type) or picked from a calendar
-  with a year selector for jumping back through older data.
+- **Range selector** — 1 week, 2 weeks, 1 month, 1 year, all, or a chosen date range. Opens on
+  the last week. Changing range animates as a zoom rather than cutting to a new view.
+- **Dates** opens a custom range that can be typed (slashes are inserted as you type) or picked
+  from a calendar with a year selector for jumping back through older data.
 
 ### Recording weights
 
