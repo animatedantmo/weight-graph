@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.animatedantmo.weightgraph.data.parseLb
+import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset

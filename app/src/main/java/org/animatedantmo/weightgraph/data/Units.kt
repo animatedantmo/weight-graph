@@ -1,5 +1,7 @@
 package org.animatedantmo.weightgraph.data
 
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 // A pound is defined as exactly 0.45359237 kg.
@@ -33,3 +35,8 @@ fun parseLb(text: String): Double? {
         .replace(",", "")
     return cleaned.toDoubleOrNull()
 }
+
+// Dates are entered, displayed and exported as M/D/YYYY throughout the app.
+private val US_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("M/d/yyyy")
+
+fun formatUsDate(date: LocalDate): String = date.format(US_DATE)

@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -31,10 +32,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,16 +56,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.date
 import org.animatedantmo.weightgraph.data.formatLb
+import org.animatedantmo.weightgraph.data.buildWeightCsv
+import org.animatedantmo.weightgraph.data.formatUsDate
 import org.animatedantmo.weightgraph.R
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-
-private val US_DATE = DateTimeFormatter.ofPattern("M/d/yyyy")
-
-fun formatUsDate(date: LocalDate): String = date.format(US_DATE)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +77,8 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var customStart by remember { mutableStateOf<LocalDate?>(null) }
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
+    var showExportChoice by remember { mutableStateOf(false) }
+    var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var revealedId by remember { mutableStateOf<Long?>(null) }
     var scrollToNewestPending by remember { mutableStateOf(false) }
 
@@ -107,9 +107,20 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
         }
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Weight Graph") }) },
-    ) { padding ->
+    // Save to device: the system picks the location, the app writes into the URI it returns.
+    val saver = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            context.contentResolver.openOutputStream(uri)?.use { stream ->
+                stream.write(buildWeightCsv(entries).toByteArray())
+            }
+        }
+    }
+
+    // No top app bar: the screen is the chart and the list, and a title bar just costs
+    // vertical space. Scaffold still supplies the status bar inset through padding.
+    Scaffold { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -119,12 +130,15 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Button(
                     onClick = { showEntrySheet = true },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Add weight") }
+                    // Wider than the other two: "Add Weight" is two words and wraps at an equal
+                    // third of the row.
+                    modifier = Modifier.weight(1.6f),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                ) { Text("Add Weight", maxLines = 1) }
                 OutlinedButton(
                     // Many providers label CSV as text/comma-separated-values or octet-stream,
                     // so accept those too rather than hiding the file the user is looking for.
@@ -139,8 +153,24 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                             )
                         )
                     },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                     modifier = Modifier.weight(1f),
-                ) { Text("Import CSV") }
+                ) { Text("Import", maxLines = 1) }
+                OutlinedButton(
+                    onClick = { showExportChoice = true },
+                    enabled = entries.isNotEmpty(),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("Export", maxLines = 1) }
+                OutlinedButton(
+                    onClick = { showDeleteAllConfirm = true },
+                    enabled = entries.isNotEmpty(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                    modifier = Modifier.weight(1f),
+                ) { Text("Delete", maxLines = 1) }
             }
 
             if (entries.isEmpty()) {
@@ -233,6 +263,37 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 customStart = start
                 customEnd = end
                 showRangePicker = false
+            },
+        )
+    }
+
+    if (showExportChoice) {
+        AlertDialog(
+            onDismissRequest = { showExportChoice = false },
+            title = { Text("Export " + entries.size + " entries") },
+            text = { Text("Date and weight, formatted as they appear here.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExportChoice = false
+                    shareCsv(context, buildWeightCsv(entries))
+                }) { Text("Share") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showExportChoice = false
+                    saver.launch(exportFileName())
+                }) { Text("Save to device") }
+            },
+        )
+    }
+
+    if (showDeleteAllConfirm) {
+        DeleteAllDialog(
+            entryCount = entries.size,
+            onDismiss = { showDeleteAllConfirm = false },
+            onConfirm = {
+                showDeleteAllConfirm = false
+                viewModel.deleteAll()
             },
         )
     }
@@ -414,3 +475,55 @@ private fun displayNameOf(context: android.content.Context, uri: Uri): String {
     }
     return uri.lastPathSegment ?: "selected file"
 }
+
+/**
+ * Confirmation for wiping the database. Requires the word "delete" to be typed, so the action
+ * cannot be completed by tapping through: there is no undo behind it.
+ */
+@Composable
+private fun DeleteAllDialog(
+    entryCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    var typed by remember { mutableStateOf("") }
+    val matches = isDeleteConfirmation(typed)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete all " + entryCount + " entries?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "This permanently deletes every weight in the app, including the "
+                        + "history imported from your spreadsheet. It cannot be undone. "
+                        + "If you want a copy, cancel and use Export first."
+                )
+                OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = { Text("Type delete to confirm") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = matches,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("Delete everything")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+// Any capitalisation of "delete", ignoring surrounding whitespace, since keyboards like to
+// capitalise the first letter and a trailing space is easy to leave behind.
+fun isDeleteConfirmation(text: String): Boolean =
+    text.trim().equals("delete", ignoreCase = true)

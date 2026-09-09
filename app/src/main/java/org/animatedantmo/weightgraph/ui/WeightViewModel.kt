@@ -47,6 +47,11 @@ class WeightViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.delete(entry) }
     }
 
+    // Wipes every entry. Irreversible: there is no soft delete or trash behind this.
+    fun deleteAll() {
+        viewModelScope.launch { repository.clear() }
+    }
+
     // Reads and parses the file, then stops and waits for confirmation.
     fun previewCsv(uri: Uri, fileName: String) {
         _importState.value = ImportState.Reading

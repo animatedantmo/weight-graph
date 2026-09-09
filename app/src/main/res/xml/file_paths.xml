@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exports are written to the cache and shared from there, so nothing needs storage permission
+     and the files are cleaned up by the system when space is needed. -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>

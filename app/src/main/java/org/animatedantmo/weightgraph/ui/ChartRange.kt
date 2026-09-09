@@ -44,6 +44,7 @@ import androidx.compose.ui.window.DialogProperties
 import org.animatedantmo.weightgraph.R
 import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.parseDate
+import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -152,7 +153,7 @@ fun CustomRangeDialog(
             // column is clipped, so the horizontal inset is applied per child instead.
             Column(modifier = Modifier.padding(vertical = 20.dp)) {
                 Text(
-                    "Select dates",
+                    "Select Date Range",
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )

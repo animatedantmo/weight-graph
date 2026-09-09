@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.date
 import org.animatedantmo.weightgraph.data.formatLb
+import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
