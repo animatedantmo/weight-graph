@@ -13,3 +13,28 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# IDE — ignore the whole Android Studio project dir. The template above only listed a few
+# paths inside it, which left a dozen machine-specific files tracked.
+.idea/
+
+# Signing material. Never commit these.
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+/release
+/captures
+
+# Kotlin compiler session data
+.kotlin/
+
+# Logs and OS cruft
+*.log
+Thumbs.db
