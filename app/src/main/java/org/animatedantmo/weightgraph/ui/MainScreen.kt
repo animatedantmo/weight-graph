@@ -5,6 +5,10 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -79,6 +83,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var showRangePicker by remember { mutableStateOf(false) }
     var showExportChoice by remember { mutableStateOf(false) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<WeightEntry?>(null) }
     var revealedId by remember { mutableStateOf<Long?>(null) }
     var scrollToNewestPending by remember { mutableStateOf(false) }
 
@@ -219,13 +224,23 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                     items(newestFirst, key = { it.id }) { entry ->
                         EntryRow(
+                            // Fades a row in or out and slides its neighbours into place, so an
+                            // add or delete reads as a change rather than a jump cut.
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(220),
+                                placementSpec = spring(
+                                    stiffness = Spring.StiffnessMediumLow,
+                                    visibilityThreshold = IntOffset.VisibilityThreshold,
+                                ),
+                                fadeOutSpec = tween(180),
+                            ),
                             entry = entry,
                             revealed = revealedId == entry.id,
                             onReveal = { revealedId = entry.id },
                             onHide = { if (revealedId == entry.id) revealedId = null },
                             onDelete = {
                                 revealedId = null
-                                viewModel.delete(entry)
+                                pendingDelete = entry
                             },
                         )
                         HorizontalDivider(
@@ -287,6 +302,32 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
         )
     }
 
+    pendingDelete?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete this entry?") },
+            text = {
+                Text(formatUsDate(entry.date) + "  ·  " + formatLb(entry.weightLb) + " lb")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        viewModel.delete(entry)
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     if (showDeleteAllConfirm) {
         DeleteAllDialog(
             entryCount = entries.size,
@@ -311,6 +352,7 @@ private fun EntryRow(
     onReveal: () -> Unit,
     onHide: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val revealPx = with(LocalDensity.current) { REVEAL_WIDTH.toPx() }
     val offsetX = remember { Animatable(0f) }
@@ -327,7 +369,7 @@ private fun EntryRow(
     val dateShift = if (swipingLeft) 0f else offsetX.value
     val weightShift = if (swipingLeft) offsetX.value else 0f
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.background)
