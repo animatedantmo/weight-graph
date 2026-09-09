@@ -29,6 +29,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -51,18 +53,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.animatedantmo.weightgraph.R
 import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.date
 import org.animatedantmo.weightgraph.data.formatLb
 import org.animatedantmo.weightgraph.data.buildWeightCsv
 import org.animatedantmo.weightgraph.data.formatUsDate
-import org.animatedantmo.weightgraph.R
 import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -84,6 +87,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var showExportChoice by remember { mutableStateOf(false) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<WeightEntry?>(null) }
+    var menuExpanded by remember { mutableStateOf(false) }
     var revealedId by remember { mutableStateOf<Long?>(null) }
     var scrollToNewestPending by remember { mutableStateOf(false) }
 
@@ -125,59 +129,15 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
 
     // No top app bar: the screen is the chart and the list, and a title bar just costs
     // vertical space. Scaffold still supplies the status bar inset through padding.
-    Scaffold { padding ->
+    Scaffold(
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Button(
-                    onClick = { showEntrySheet = true },
-                    // Wider than the other two: "Add Weight" is two words and wraps at an equal
-                    // third of the row.
-                    modifier = Modifier.weight(1.6f),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                ) { Text("Add Weight", maxLines = 1) }
-                OutlinedButton(
-                    // Many providers label CSV as text/comma-separated-values or octet-stream,
-                    // so accept those too rather than hiding the file the user is looking for.
-                    onClick = {
-                        picker.launch(
-                            arrayOf(
-                                "text/csv",
-                                "text/comma-separated-values",
-                                "text/plain",
-                                "application/vnd.ms-excel",
-                                "application/octet-stream",
-                            )
-                        )
-                    },
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                    modifier = Modifier.weight(1f),
-                ) { Text("Import", maxLines = 1) }
-                OutlinedButton(
-                    onClick = { showExportChoice = true },
-                    enabled = entries.isNotEmpty(),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                    modifier = Modifier.weight(1f),
-                ) { Text("Export", maxLines = 1) }
-                OutlinedButton(
-                    onClick = { showDeleteAllConfirm = true },
-                    enabled = entries.isNotEmpty(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
-                    modifier = Modifier.weight(1f),
-                ) { Text("Delete", maxLines = 1) }
-            }
-
             if (entries.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -192,7 +152,8 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 }
             } else {
                 WeightChart(
-                    entries = chartEntries,
+                    allEntries = entries,
+                    visibleEntries = chartEntries,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp),
@@ -221,7 +182,11 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 HorizontalDivider()
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 88.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                     items(newestFirst, key = { it.id }) { entry ->
                         EntryRow(
                             // Fades a row in or out and slides its neighbours into place, so an
@@ -250,10 +215,49 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 }
             }
         }
+
+        // Add Weight is the primary action and stays one tap, bottom left. The data actions
+        // group under a single button on the right.
+        FloatingActionButton(
+            onClick = { showEntrySheet = true },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_add),
+                contentDescription = "Add weight",
+            )
+        }
+
+        ActionMenu(
+            expanded = menuExpanded,
+            onExpandedChange = { menuExpanded = it },
+            hasEntries = entries.isNotEmpty(),
+            onImport = {
+                // Many providers label CSV as text/comma-separated-values or octet-stream, so
+                // accept those too rather than hiding the file the user is looking for.
+                picker.launch(
+                    arrayOf(
+                        "text/csv",
+                        "text/comma-separated-values",
+                        "text/plain",
+                        "application/vnd.ms-excel",
+                        "application/octet-stream",
+                    )
+                )
+            },
+            onExport = { showExportChoice = true },
+            onDeleteAll = { showDeleteAllConfirm = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+        )
+        }
     }
 
     if (showEntrySheet) {
-        EntrySheet(
+        EntryDialog(
             initialDate = LocalDate.now(),
             initialWeightLb = null,
             onDismiss = { showEntrySheet = false },

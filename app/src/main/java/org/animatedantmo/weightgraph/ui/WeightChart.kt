@@ -1,5 +1,7 @@
 package org.animatedantmo.weightgraph.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -21,6 +23,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -49,6 +52,9 @@ private val X_GUTTER = 22.dp
 private const val TARGET_Y_TICKS = 4
 private const val TARGET_X_TICKS = 3
 
+// Long enough to read as a zoom, short enough not to feel sluggish when tapping through.
+private const val RANGE_ANIMATION_MS = 450
+
 private val LABEL_SIZE = 11.sp
 private val READOUT_SIZE = 12.sp
 
@@ -56,7 +62,14 @@ private val READOUT_SIZE = 12.sp
 private val MARKER_COLOR = Color(0xFFFF3B30)
 
 @Composable
-fun WeightChart(entries: List<WeightEntry>, modifier: Modifier = Modifier) {
+fun WeightChart(
+    allEntries: List<WeightEntry>,
+    visibleEntries: List<WeightEntry>,
+    modifier: Modifier = Modifier,
+) {
+    // The line is always drawn from every reading; only the window onto it changes. That lets a
+    // range switch animate as a zoom instead of one point set being swapped for another.
+    val entries = visibleEntries
     // Keeps the chart's height rather than collapsing, so a custom range that catches nothing
     // reads as an empty chart instead of the layout jumping.
     if (entries.isEmpty()) {
@@ -91,6 +104,12 @@ fun WeightChart(entries: List<WeightEntry>, modifier: Modifier = Modifier) {
         }
         return
     }
+
+    val spec = tween<Float>(RANGE_ANIMATION_MS)
+    val minDay by animateFloatAsState(stats.minDay.toFloat(), spec, label = "minDay")
+    val maxDay by animateFloatAsState(stats.maxDay.toFloat(), spec, label = "maxDay")
+    val minLb by animateFloatAsState(stats.minLb.toFloat(), spec, label = "minLb")
+    val maxLb by animateFloatAsState(stats.maxLb.toFloat(), spec, label = "maxLb")
 
     val labelStyle = TextStyle(fontSize = LABEL_SIZE, color = labelColor)
     val readoutStyle = TextStyle(
@@ -127,18 +146,18 @@ fun WeightChart(entries: List<WeightEntry>, modifier: Modifier = Modifier) {
         if (plotWidth <= 0f || plotHeight <= 0f) return@Canvas
 
         fun xOf(epochDay: Long): Float {
-            val span = (stats.maxDay - stats.minDay).toFloat().coerceAtLeast(1f)
-            return plotLeft + plotWidth * ((epochDay - stats.minDay).toFloat() / span)
+            val span = (maxDay - minDay).coerceAtLeast(1f)
+            return plotLeft + plotWidth * ((epochDay - minDay) / span)
         }
 
         fun yOf(lb: Double): Float {
-            val span = (stats.maxLb - stats.minLb).toFloat().coerceAtLeast(0.001f)
-            return plotBottom - plotHeight * ((lb - stats.minLb).toFloat() / span)
+            val span = (maxLb - minLb).coerceAtLeast(0.001f)
+            return plotBottom - plotHeight * ((lb.toFloat() - minLb) / span)
         }
 
         // Horizontal gridlines, labelled in pounds.
-        var tick = ceil(stats.minLb / stats.yStep) * stats.yStep
-        while (tick <= stats.maxLb + 1e-6) {
+        var tick = ceil(minLb / stats.yStep) * stats.yStep
+        while (tick <= maxLb + 1e-6) {
             val y = yOf(tick)
             drawLine(gridColor, Offset(plotLeft, y), Offset(plotRight, y), strokeWidth = 1.dp.toPx())
             val text = formatTick(tick)
@@ -177,22 +196,29 @@ fun WeightChart(entries: List<WeightEntry>, modifier: Modifier = Modifier) {
             )
         }
 
-        // The weight line itself.
-        val path = Path()
-        entries.forEachIndexed { index, entry ->
-            val x = xOf(entry.epochDay)
-            val y = yOf(entry.weightLb)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        if (entries.size == 1) {
-            // A one-point path draws nothing, so show the reading as a dot instead.
-            drawCircle(
-                color = lineColor,
-                radius = 3.5.dp.toPx(),
-                center = Offset(xOf(entries[0].epochDay), yOf(entries[0].weightLb)),
-            )
-        } else {
-            drawPath(path, lineColor, style = Stroke(width = strokeWidthFor(entries.size, this)))
+        // The weight line, drawn from every reading and clipped to the plot area. Points outside
+        // the current window fall off the sides rather than being excluded from the path.
+        clipRect(left = plotLeft, top = 0f, right = plotRight, bottom = plotBottom) {
+            val path = Path()
+            allEntries.forEachIndexed { index, entry ->
+                val x = xOf(entry.epochDay)
+                val y = yOf(entry.weightLb)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            if (allEntries.size == 1) {
+                // A one-point path draws nothing, so show the reading as a dot instead.
+                drawCircle(
+                    color = lineColor,
+                    radius = 3.5.dp.toPx(),
+                    center = Offset(xOf(allEntries[0].epochDay), yOf(allEntries[0].weightLb)),
+                )
+            } else {
+                drawPath(
+                    path,
+                    lineColor,
+                    style = Stroke(width = strokeWidthFor(entries.size, this@Canvas)),
+                )
+            }
         }
 
         // Crosshair, snapped to the nearest real reading so the readout is never interpolated.
