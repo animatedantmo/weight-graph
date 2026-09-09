@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -74,11 +75,20 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var showEntrySheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+    var chartRange by remember { mutableStateOf(ChartRange.ALL) }
+    var customStart by remember { mutableStateOf<LocalDate?>(null) }
+    var customEnd by remember { mutableStateOf<LocalDate?>(null) }
+    var showRangePicker by remember { mutableStateOf(false) }
     var revealedId by remember { mutableStateOf<Long?>(null) }
     var scrollToNewestPending by remember { mutableStateOf(false) }
 
     // asReversed is a view rather than a copy, which matters at four thousand entries.
     val newestFirst = remember(entries) { entries.asReversed() }
+
+    // Only the chart is windowed; the list below still shows everything.
+    val chartEntries = remember(entries, chartRange, customStart, customEnd) {
+        applyRange(entries, chartRange, customStart, customEnd)
+    }
 
     // Saving is asynchronous, so the scroll waits for the new row to actually arrive in the list
     // rather than firing against the old contents.
@@ -146,6 +156,29 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                     )
                 }
             } else {
+                WeightChart(
+                    entries = chartEntries,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                )
+                ChartRangeSelector(
+                    selected = chartRange,
+                    onSelect = { picked ->
+                        chartRange = picked
+                        if (picked == ChartRange.CUSTOM) {
+                            // Tapping Custom always reopens the picker, so the dates can be
+                            // changed without first switching to another range and back.
+                            showRangePicker = true
+                        } else {
+                            // Moving to a preset abandons the custom window, so Custom opens
+                            // empty next time rather than restoring a range you left behind.
+                            customStart = null
+                            customEnd = null
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
                 Text(
                     entries.size.toString() + " entries  ·  latest " +
                         formatLb(newestFirst.first().weightLb) + " lb on " +
@@ -183,6 +216,23 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 viewModel.record(date, lb)
                 scrollToNewestPending = true
                 showEntrySheet = false
+            },
+        )
+    }
+
+    if (showRangePicker) {
+        CustomRangeDialog(
+            initialStart = customStart,
+            initialEnd = customEnd,
+            onDismiss = {
+                showRangePicker = false
+                // Backing out without a range would leave an empty Custom view selected.
+                if (customStart == null || customEnd == null) chartRange = ChartRange.ALL
+            },
+            onConfirm = { start, end ->
+                customStart = start
+                customEnd = end
+                showRangePicker = false
             },
         )
     }
