@@ -1,5 +1,6 @@
 package org.animatedantmo.weightgraph.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +57,9 @@ private const val TARGET_X_TICKS = 3
 // Long enough to read as a zoom, short enough not to feel sluggish when tapping through.
 private const val RANGE_ANIMATION_MS = 450
 
+// How long the line takes to reach a newly added reading, or to pull back from a deleted one.
+private const val LINE_ANIMATION_MS = 1000
+
 private val LABEL_SIZE = 11.sp
 private val READOUT_SIZE = 12.sp
 
@@ -97,6 +102,38 @@ fun WeightChart(
 
     // Where the finger is, in canvas pixels. Null when nothing is being touched.
     var touchX by remember { mutableStateOf<Float?>(null) }
+
+    // The line animates at whichever end changed:
+    //
+    //  - a reading later than the current end appears: growth runs 0 to 1 and the final segment
+    //    is drawn only partway, so the line reaches out to the new point.
+    //  - the latest reading is deleted: the removed point is held as a ghost and retract runs
+    //    1 to 0, so the line pulls back from where it used to end instead of snapping short.
+    //
+    // Editing an older day, changing range, or the first load leave both at rest.
+    val newestDay = allEntries.lastOrNull()?.epochDay
+    val growth = remember { Animatable(1f) }
+    val retract = remember { Animatable(0f) }
+    var ghost by remember { mutableStateOf<WeightEntry?>(null) }
+    var previousNewest by remember { mutableStateOf(allEntries.lastOrNull()) }
+    LaunchedEffect(newestDay) {
+        val previous = previousNewest
+        val current = allEntries.lastOrNull()
+        previousNewest = current
+        if (current == null || previous == null) return@LaunchedEffect
+        when {
+            current.epochDay > previous.epochDay -> {
+                growth.snapTo(0f)
+                growth.animateTo(1f, tween(LINE_ANIMATION_MS))
+            }
+            current.epochDay < previous.epochDay -> {
+                ghost = previous
+                retract.snapTo(1f)
+                retract.animateTo(0f, tween(LINE_ANIMATION_MS))
+                ghost = null
+            }
+        }
+    }
 
     if (stats == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -200,10 +237,39 @@ fun WeightChart(
         // the current window fall off the sides rather than being excluded from the path.
         clipRect(left = plotLeft, top = 0f, right = plotRight, bottom = plotBottom) {
             val path = Path()
+            val lastIndex = allEntries.lastIndex
+            val grown = growth.value
             allEntries.forEachIndexed { index, entry ->
                 val x = xOf(entry.epochDay)
                 val y = yOf(entry.weightLb)
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                when {
+                    index == 0 -> path.moveTo(x, y)
+                    // The newest segment stops short while the growth animation runs, so the
+                    // line extends toward the new reading rather than appearing at it.
+                    index == lastIndex && grown < 1f -> {
+                        val previous = allEntries[index - 1]
+                        val fromX = xOf(previous.epochDay)
+                        val fromY = yOf(previous.weightLb)
+                        path.lineTo(fromX + (x - fromX) * grown, fromY + (y - fromY) * grown)
+                    }
+                    else -> path.lineTo(x, y)
+                }
+            }
+
+            // Deleted newest reading: keep drawing out to where it was, pulling back to the new
+            // end over the animation.
+            val removed = ghost
+            val retracting = retract.value
+            if (removed != null && retracting > 0f) {
+                val last = allEntries.last()
+                val fromX = xOf(last.epochDay)
+                val fromY = yOf(last.weightLb)
+                val toX = xOf(removed.epochDay)
+                val toY = yOf(removed.weightLb)
+                path.lineTo(
+                    fromX + (toX - fromX) * retracting,
+                    fromY + (toY - fromY) * retracting,
+                )
             }
             if (allEntries.size == 1) {
                 // A one-point path draws nothing, so show the reading as a dot instead.
