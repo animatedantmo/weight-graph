@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">Weight Graph</string>
+    <!-- app_name is defined per build type in app/build.gradle.kts, so that a side-by-side
+         install built on a secondary machine gets a distinct label. -->
 </resources>

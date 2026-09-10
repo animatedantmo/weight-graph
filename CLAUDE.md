@@ -28,6 +28,26 @@ project's `toolchainVersion = 25`:
 SDK defaults to `%LOCALAPPDATA%/Android/Sdk`. The exact path for this checkout is in
 `local.properties` (gitignored, machine-specific).
 
+## Side-by-side installs
+
+Each machine signs debug builds with its own `~/.android/debug.keystore`, so a debug build from
+a second machine cannot update an install from the first — Android rejects it with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Rather than uninstall (which deletes the entered weights),
+a secondary machine gets its own `applicationId` by setting a suffix in `local.properties`:
+
+    installSuffix=laptop
+
+That gives `org.animatedantmo.weightgraph.laptop`, labelled `Weight Graph (laptop)` with a red
+launcher icon instead of indigo, installed alongside the real app. The desktop leaves
+`installSuffix` unset and is unaffected.
+
+The two are separate apps with separate Room databases — nothing syncs between them. Moving data
+across means Export to CSV from one and Import into the other.
+
+`app_name` and the launcher colour are therefore set with `resValue` in `app/build.gradle.kts`,
+not in `res/values/`, since a resource cannot be defined in both. This needs
+`buildFeatures { resValues = true }`, which AGP 9 defaults to off.
+
 ## Architecture
 
 `data/` holds the persistence layer:
