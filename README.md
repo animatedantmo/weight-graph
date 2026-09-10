@@ -35,8 +35,11 @@ access, no analytics — everything stays on the device.
 
 ### Editing and deleting
 
-- Swipe a row left or right to reveal a delete button. Both the date and the weight stay visible
-  while it is open, so it is clear which reading is about to go.
+- Long press a row to reveal a delete button on the right, which springs into place. Both the date
+  and the weight stay visible while it is open, so it is clear which reading is about to go. Tap
+  the row again, or long press another, to put it away. A long press rather than a swipe, because
+  a horizontal drag sits on top of the list's own scrolling and was too easy to trigger by
+  accident.
 - Deleting a single row asks for confirmation and names the date and weight.
 - **Delete all** requires typing `delete` to confirm, warns that it cannot be undone, and points
   at Export first.
@@ -102,6 +105,9 @@ entry, display and export, so nothing is converted on the way in or out.
 
 - **`minSdk` is 36 (Android 16).** Carried over from the project template; the app will not
   install on older devices. Nothing in it actually requires Android 16.
+- **Portrait only.** The chart and the list are both laid out for a tall, narrow window. Note
+  that Android 16 ignores an app's orientation request on displays at least 600dp wide, so on a
+  tablet or an unfolded foldable the app will still rotate.
 - Room `exportSchema` is currently off. It should be turned on, with `app/schemas/` committed,
   before releasing a version that has to migrate existing data.
 - `android.disallowKotlinSourceSets=false` in `gradle.properties` is required for KSP to run

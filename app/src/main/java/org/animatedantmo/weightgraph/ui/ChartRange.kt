@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
@@ -132,12 +134,24 @@ fun CustomRangeDialog(
     var endDigits by remember { mutableStateOf(initialEnd.toDigits()) }
     var showCalendar by remember { mutableStateOf(false) }
     var editingEnd by remember { mutableStateOf(false) }
+    // Set by an Apply that could not go through, so a blank or half-typed field is only
+    // called out once the user has actually tried to apply the range.
+    var applyRejected by remember { mutableStateOf(false) }
+
+    val haptics = LocalHapticFeedback.current
 
     val start = startDigits.toDateOrNull()
     val end = endDigits.toDateOrNull()
-    val startError = startDigits.length == DATE_DIGITS && start == null
-    val endError = endDigits.length == DATE_DIGITS && end == null
-    val canApply = start != null && end != null
+    // A full date that is not a real one is wrong the moment it is complete; anything still
+    // blank or half-typed is only wrong once Apply has been refused.
+    val startError = start == null && (startDigits.length == DATE_DIGITS || applyRejected)
+    val endError = end == null && (endDigits.length == DATE_DIGITS || applyRejected)
+    val rangeError = when {
+        !startError && !endError -> null
+        startDigits.length == DATE_DIGITS && endDigits.length == DATE_DIGITS ->
+            "That is not a real date"
+        else -> "Enter both dates as M/D/YYYY"
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -196,9 +210,9 @@ fun CustomRangeDialog(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    if (startError || endError) {
+                    if (rangeError != null) {
                         Text(
-                            "That is not a real date",
+                            rangeError,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = 6.dp, start = 20.dp, end = 20.dp),
@@ -235,9 +249,20 @@ fun CustomRangeDialog(
                         Text("Reset")
                     }
                     TextButton(onClick = onDismiss) { Text("Cancel") }
+                    // Always enabled, for the same reason as Save in the entry dialog: a
+                    // refused tap that buzzes and names the problem beats one that does nothing.
                     TextButton(
-                        onClick = { if (start != null && end != null) onConfirm(start, end) },
-                        enabled = canApply,
+                        onClick = {
+                            if (start != null && end != null) {
+                                onConfirm(start, end)
+                            } else {
+                                applyRejected = true
+                                haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                                // Nothing explains itself on the calendar, so fall back to the
+                                // fields where the errors are actually visible.
+                                showCalendar = false
+                            }
+                        },
                     ) {
                         Text("Apply")
                     }

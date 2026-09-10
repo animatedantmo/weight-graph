@@ -4,13 +4,18 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,12 +52,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -67,9 +74,7 @@ import org.animatedantmo.weightgraph.data.formatLb
 import org.animatedantmo.weightgraph.data.buildWeightCsv
 import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.LocalDate
-import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +82,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     var showEntrySheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
@@ -220,7 +226,10 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
         // Add Weight is the primary action and stays one tap, bottom left. The data actions
         // group under a single button on the right.
         FloatingActionButton(
-            onClick = { showEntrySheet = true },
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                showEntrySheet = true
+            },
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(16.dp),
@@ -360,19 +369,21 @@ private fun EntryRow(
     modifier: Modifier = Modifier,
 ) {
     val revealPx = with(LocalDensity.current) { REVEAL_WIDTH.toPx() }
-    val offsetX = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
-    // Closes this row when a different one is opened, so only one delete is ever exposed.
-    LaunchedEffect(revealed) {
-        if (!revealed && offsetX.value != 0f) offsetX.animateTo(0f)
-    }
+    // detectTapGestures is launched once per row and keeps the lambdas it was started with, so
+    // the tap handler cannot close over `revealed` directly: it would keep the value the row was
+    // first composed with, which is false, and tapping would never put the button away. Reading
+    // it through a holder gives the running gesture the current value.
+    val revealedNow by rememberUpdatedState(revealed)
 
-    // Only the text on the side the button appears gets pushed away; the other stays put, so the
-    // date and the weight are both still readable while deciding whether to delete.
-    val swipingLeft = offsetX.value < 0f
-    val dateShift = if (swipingLeft) 0f else offsetX.value
-    val weightShift = if (swipingLeft) offsetX.value else 0f
+    // Only the weight is pushed away, and only far enough to clear the button; the date stays
+    // put, so both values are still readable while deciding whether to delete.
+    val weightShift by animateFloatAsState(
+        targetValue = if (revealed) -revealPx else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "weightShift",
+    )
 
     Box(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -381,30 +392,15 @@ private fun EntryRow(
                 .fillMaxWidth()
                 .padding(vertical = 18.dp)
                 .pointerInput(entry.id) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            scope.launch {
-                                if (abs(offsetX.value) > revealPx / 2f) {
-                                    offsetX.animateTo(if (offsetX.value < 0f) -revealPx else revealPx)
-                                    onReveal()
-                                } else {
-                                    offsetX.animateTo(0f)
-                                    onHide()
-                                }
-                            }
+                    // A long press rather than a swipe: a horizontal drag sits on top of the
+                    // list's own scrolling and was too easy to trigger by accident.
+                    detectTapGestures(
+                        onLongPress = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onReveal()
                         },
-                        onDragCancel = {
-                            scope.launch {
-                                offsetX.animateTo(0f)
-                                onHide()
-                            }
-                        },
-                    ) { change, drag ->
-                        change.consume()
-                        scope.launch {
-                            offsetX.snapTo((offsetX.value + drag).coerceIn(-revealPx, revealPx))
-                        }
-                    }
+                        onTap = { if (revealedNow) onHide() },
+                    )
                 },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -412,7 +408,6 @@ private fun EntryRow(
             Text(
                 text = formatUsDate(entry.date),
                 style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.offset { IntOffset(dateShift.roundToInt(), 0) },
             )
             Text(
                 text = formatLb(entry.weightLb) + " lb",
@@ -422,24 +417,32 @@ private fun EntryRow(
         }
 
         // Drawn over the row rather than behind it, since the row no longer slides away to
-        // uncover anything.
-        if (offsetX.value != 0f) {
-            Box(
-                modifier = Modifier.matchParentSize(),
-                contentAlignment = if (swipingLeft) Alignment.CenterEnd else Alignment.CenterStart,
+        // uncover anything. It springs up from small so the button arrives with some weight
+        // instead of blinking on, and leaves quickly once the decision is made.
+        AnimatedVisibility(
+            visible = revealed,
+            enter = scaleIn(
+                initialScale = 0.55f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            ) + fadeIn(animationSpec = tween(120)),
+            exit = scaleOut(targetScale = 0.55f, animationSpec = tween(140)) +
+                fadeOut(animationSpec = tween(140)),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            FilledTonalIconButton(
+                onClick = onDelete,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
             ) {
-                FilledTonalIconButton(
-                    onClick = onDelete,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_delete),
-                        contentDescription = "Delete this entry",
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_delete),
+                    contentDescription = "Delete this entry",
+                )
             }
         }
     }
@@ -534,7 +537,11 @@ private fun DeleteAllDialog(
     onConfirm: () -> Unit,
 ) {
     var typed by remember { mutableStateOf("") }
+    // Set by a confirm that could not go through, so the field only objects once the user has
+    // actually tried to delete rather than while they are still typing the word.
+    var confirmRejected by remember { mutableStateOf(false) }
     val matches = isDeleteConfirmation(typed)
+    val haptics = LocalHapticFeedback.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -551,14 +558,37 @@ private fun DeleteAllDialog(
                     onValueChange = { typed = it },
                     label = { Text("Type delete to confirm") },
                     singleLine = true,
+                    isError = confirmRejected && !matches,
+                    supportingText = if (confirmRejected && !matches) {
+                        {
+                            Text(
+                                if (typed.isBlank()) {
+                                    "Type delete to confirm"
+                                } else {
+                                    "That does not say delete"
+                                }
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
+            // Always enabled so a premature tap can say why, but the typed word is still the
+            // only thing that lets the delete through: onConfirm runs on a match and nowhere
+            // else, so tapping through remains impossible.
             TextButton(
-                onClick = onConfirm,
-                enabled = matches,
+                onClick = {
+                    if (matches) {
+                        onConfirm()
+                    } else {
+                        confirmRejected = true
+                        haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                    }
+                },
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
                 ),

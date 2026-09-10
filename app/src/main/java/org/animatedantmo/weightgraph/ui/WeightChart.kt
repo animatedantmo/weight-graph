@@ -63,6 +63,31 @@ private const val LINE_ANIMATION_MS = 1000
 private val LABEL_SIZE = 11.sp
 private val READOUT_SIZE = 12.sp
 
+// Deliberately smaller than the axis labels: these sit in among the data and should read as
+// annotation on the line rather than compete with it.
+private val POINT_LABEL_SIZE = 9.sp
+
+// Clearance between a number and the edge of the dot it belongs to.
+private val POINT_LABEL_OFFSET = 4.dp
+
+// Marks the reading a number refers to, so the value is tied to a point rather than floating
+// somewhere near the line.
+// Shared with the scrub marker below, so a reading looks the same size whether it is labelled
+// or under the finger.
+private val POINT_DOT_RADIUS = 4.5.dp
+
+// The marker is knocked out of the line first; this is how far the knockout extends past it.
+private val MARKER_HALO = 2.dp
+
+// Point labels are for reading individual days off the line, which stops being the point once
+// the window is longer than a fortnight. 1W and 2W are labelled; 1M and up are left clean, as
+// is any custom range wider than this.
+private const val LABEL_MAX_DAY_SPAN = 14L
+
+// Blank space required between two neighbouring numbers. Once the readings are closer together
+// than this, the labels start thinning out instead of overlapping.
+private val POINT_LABEL_GAP = 7.dp
+
 // Deliberately not the line colour: the marker has to stand out against the line it sits on.
 private val MARKER_COLOR = Color(0xFFFF3B30)
 
@@ -93,6 +118,7 @@ fun WeightChart(
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    val pointLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
     val readoutBackground = MaterialTheme.colorScheme.surfaceVariant
     val readoutText = MaterialTheme.colorScheme.onSurfaceVariant
     val chartBackground = MaterialTheme.colorScheme.background
@@ -149,6 +175,7 @@ fun WeightChart(
     val maxLb by animateFloatAsState(stats.maxLb.toFloat(), spec, label = "maxLb")
 
     val labelStyle = TextStyle(fontSize = LABEL_SIZE, color = labelColor)
+    val pointLabelStyle = TextStyle(fontSize = POINT_LABEL_SIZE, color = pointLabelColor)
     val readoutStyle = TextStyle(
         fontSize = READOUT_SIZE,
         color = readoutText,
@@ -287,6 +314,81 @@ fun WeightChart(
             }
         }
 
+        // The reading itself printed next to each point. Every point is labelled while the
+        // numbers still fit side by side, which covers the short ranges; past that they thin to
+        // whatever the width allows, so a year of daily weights stays readable rather than
+        // collapsing into a smear. Walking back from the newest reading keeps the latest weight
+        // labelled at every density.
+        if (stats.maxDay - stats.minDay <= LABEL_MAX_DAY_SPAN) {
+            val sample = measurer.measure(AnnotatedString("188.8"), pointLabelStyle)
+            val stride = labelStride(
+                pointCount = entries.size,
+                plotWidth = plotWidth,
+                minSpacing = sample.size.width + POINT_LABEL_GAP.toPx(),
+            )
+            val gap = POINT_LABEL_OFFSET.toPx()
+            val dotRadius = POINT_DOT_RADIUS.toPx()
+            val maxLeft = (plotRight - sample.size.width).coerceAtLeast(plotLeft)
+            for (index in entries.lastIndex downTo 0 step stride) {
+                val entry = entries[index]
+                val text = formatLb(entry.weightLb)
+                val measured = measurer.measure(AnnotatedString(text), pointLabelStyle)
+                val x = xOf(entry.epochDay)
+                val y = yOf(entry.weightLb)
+
+                drawCircle(color = lineColor, radius = dotRadius, center = Offset(x, y))
+
+                val previousY = entries.getOrNull(index - 1)?.let { yOf(it.weightLb) }
+                val nextY = entries.getOrNull(index + 1)?.let { yOf(it.weightLb) }
+
+                // The number goes on whichever side of the point the line is not using. Both
+                // neighbours lower on screen means the line falls away on both sides and the
+                // space above is clear; both higher means the reverse. On a slope the average
+                // still points at the emptier side.
+                val neighbourYs = listOfNotNull(previousY, nextY)
+                val lineIsBelow = neighbourYs.isEmpty() || neighbourYs.average() > y
+
+                val clearance = dotRadius + gap
+                val above = y - clearance - measured.size.height
+                val below = y + clearance
+                // Pushed back inside the plot when it runs out of room, never flipped to the
+                // other side: the side was chosen because the other one is where the line is,
+                // so flipping puts the number straight through it. The highest reading of a
+                // range is a peak with little headroom, which is exactly the case that used to
+                // flip down between its own two descending segments.
+                val top = (if (lineIsBelow) above else below).coerceIn(
+                    plotTop,
+                    (plotBottom - measured.size.height).coerceAtLeast(plotTop),
+                )
+
+                // Choosing a side is not enough on a slope: the segment climbing toward that
+                // side runs straight through a number centred on its own point. Where exactly
+                // one neighbour sits on the label's side, the number slides to the other
+                // neighbour's side so the segment passes beside it instead of through it.
+                val placedAbove = top + measured.size.height <= y
+                val previousIntrudes = previousY != null &&
+                    if (placedAbove) previousY < y else previousY > y
+                val nextIntrudes = nextY != null &&
+                    if (placedAbove) nextY < y else nextY > y
+                val nudge = measured.size.width / 2f + gap
+                val shift = when {
+                    previousIntrudes && !nextIntrudes -> nudge
+                    nextIntrudes && !previousIntrudes -> -nudge
+                    else -> 0f
+                }
+
+                drawText(
+                    textMeasurer = measurer,
+                    text = text,
+                    topLeft = Offset(
+                        x = (x + shift - measured.size.width / 2f).coerceIn(plotLeft, maxLeft),
+                        y = top,
+                    ),
+                    style = pointLabelStyle,
+                )
+            }
+        }
+
         // Crosshair, snapped to the nearest real reading so the readout is never interpolated.
         val finger = touchX
         if (finger != null) {
@@ -306,8 +408,12 @@ fun WeightChart(
                 ),
             )
             // Knocked out of the line first, so the blue does not show through the marker.
-            drawCircle(chartBackground, radius = 6.5.dp.toPx(), center = Offset(x, y))
-            drawCircle(MARKER_COLOR, radius = 4.5.dp.toPx(), center = Offset(x, y))
+            drawCircle(
+                chartBackground,
+                radius = (POINT_DOT_RADIUS + MARKER_HALO).toPx(),
+                center = Offset(x, y),
+            )
+            drawCircle(MARKER_COLOR, radius = POINT_DOT_RADIUS.toPx(), center = Offset(x, y))
 
             val text = formatUsDate(entry.date) + "   " + formatLb(entry.weightLb) + " lb"
             val measured = measurer.measure(AnnotatedString(text), readoutStyle)
@@ -349,6 +455,18 @@ private fun nearestByDay(entries: List<WeightEntry>, targetDay: Long): WeightEnt
     } else {
         candidate
     }
+}
+
+/**
+ * How many readings to step over between point labels. Returns 1 while every reading can be
+ * labelled without the numbers touching, and grows only as far as it has to once they cannot,
+ * so density is decided by the room actually available rather than by which range is selected.
+ */
+private fun labelStride(pointCount: Int, plotWidth: Float, minSpacing: Float): Int {
+    if (pointCount <= 1 || plotWidth <= 0f || minSpacing <= 0f) return 1
+    val spacing = plotWidth / (pointCount - 1)
+    if (spacing >= minSpacing) return 1
+    return ceil(minSpacing / spacing).toInt().coerceAtLeast(1)
 }
 
 // Dense data needs a thinner line, or twelve years of daily readings turn into a solid block.

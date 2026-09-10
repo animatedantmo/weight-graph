@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,8 +61,13 @@ fun EntryDialog(
     }
     var showDatePicker by remember { mutableStateOf(false) }
 
+    // Set by a Save that could not go through, so an empty field explains itself only once the
+    // user has actually tried to save rather than the moment the dialog opens.
+    var saveRejected by remember { mutableStateOf(false) }
+
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val haptics = LocalHapticFeedback.current
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboard?.show()
@@ -68,13 +75,12 @@ fun EntryDialog(
 
     val parsed = parseLb(text)
     val error = when {
-        text.isBlank() -> null
+        text.isBlank() -> if (saveRejected) "Enter a weight" else null
         parsed == null -> "Enter a number, like 178.8"
         parsed < MIN_LB || parsed > MAX_LB ->
             "That is outside " + MIN_LB.toInt() + "-" + MAX_LB.toInt() + " lb"
         else -> null
     }
-    val canSave = parsed != null && error == null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -105,9 +111,18 @@ fun EntryDialog(
             }
         },
         confirmButton = {
+            // Deliberately always enabled. A disabled button swallows the tap outright, so a
+            // half-typed weight would give no answer at all; instead the tap is refused out
+            // loud, with a buzz and the reason under the field.
             TextButton(
-                onClick = { parsed?.let { onSave(date, it) } },
-                enabled = canSave,
+                onClick = {
+                    if (parsed != null && error == null) {
+                        onSave(date, parsed)
+                    } else {
+                        saveRejected = true
+                        haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                    }
+                },
             ) {
                 Text("Save")
             }

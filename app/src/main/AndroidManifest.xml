@@ -11,10 +11,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.WeightGraph">
+        <!-- Portrait only. The chart and the list are both built around a tall, narrow window,
+             and landscape leaves the chart a letterbox strip with the list squeezed under it. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.WeightGraph"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
