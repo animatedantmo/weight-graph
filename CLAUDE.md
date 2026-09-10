@@ -15,9 +15,17 @@ readings, and import of existing history from a CSV file or a Google spreadsheet
 ## Commands
 
 Gradle needs a JDK on PATH. Android Studio's bundled JBR is the one that matches the
-project's `toolchainVersion = 25`:
+project's `toolchainVersion = 25`. Its location is machine-specific:
 
+    # desktop
     export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
+    # laptop
+    export JAVA_HOME="C:/Program Files/Android/Android Studio1/jbr"
+
+On the laptop, `Android Studio` (no suffix) is a broken partial install whose `jbr` has only
+`bin` and `lib/modules`. Pointing `JAVA_HOME` at it fails with `could not open ...\jbr\lib\
+jvm.cfg` instead of a normal Gradle error. Check `$JAVA_HOME/release` exists before assuming
+a JBR is usable.
 
 - Build: `./gradlew.bat assembleDebug`
 - Install on the connected phone: `./gradlew.bat installDebug`
