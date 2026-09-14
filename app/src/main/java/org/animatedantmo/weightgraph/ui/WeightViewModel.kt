@@ -33,8 +33,10 @@ class WeightViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = WeightRepository(WeightDatabase.get(app).weightDao())
 
-    val entries: StateFlow<List<WeightEntry>> = repository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // Null until Room delivers its first result. Starting from an empty list instead made the
+    // screen show "No weights yet" for a moment on every launch, before the real data arrived.
+    val entries: StateFlow<List<WeightEntry>?> = repository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()

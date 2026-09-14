@@ -39,6 +39,7 @@ fun ActionMenu(
     hasEntries: Boolean,
     onImport: () -> Unit,
     onExport: () -> Unit,
+    onBackup: () -> Unit,
     onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,6 +81,18 @@ fun ActionMenu(
                             onExport()
                         },
                     )
+                }
+                // Always shown, unlike Export and Delete All, so the schedule and the last result
+                // can still be checked when there are no entries.
+                MenuAction(
+                    label = "Drive Backup",
+                    icon = R.drawable.ic_backup,
+                    onClick = {
+                        onExpandedChange(false)
+                        onBackup()
+                    },
+                )
+                if (hasEntries) {
                     MenuAction(
                         label = "Delete All",
                         icon = R.drawable.ic_delete,

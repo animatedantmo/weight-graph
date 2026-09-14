@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import org.animatedantmo.weightgraph.R
 import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.date
@@ -76,10 +78,22 @@ import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
+private const val MIN_LOADING_MS = 500L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: WeightViewModel = viewModel()) {
-    val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val loadedEntries by viewModel.entries.collectAsStateWithLifecycle()
+    // The database usually answers within a frame or two, which flashed the spinner too briefly
+    // to read as anything. Holding it for a minimum time makes it a deliberate beat instead.
+    // Saveable, so recreating the activity does not replay it.
+    var minimumLoadingElapsed by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(MIN_LOADING_MS)
+        minimumLoadingElapsed = true
+    }
+    val isLoading = loadedEntries == null || !minimumLoadingElapsed
+    val entries = loadedEntries.orEmpty()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -92,6 +106,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
     var showExportChoice by remember { mutableStateOf(false) }
+    var showBackup by remember { mutableStateOf(false) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<WeightEntry?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -145,7 +160,11 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (entries.isEmpty()) {
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (entries.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -258,12 +277,17 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 )
             },
             onExport = { showExportChoice = true },
+            onBackup = { showBackup = true },
             onDeleteAll = { showDeleteAllConfirm = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp),
         )
         }
+    }
+
+    if (showBackup) {
+        BackupDialog(onDismiss = { showBackup = false })
     }
 
     if (showEntrySheet) {

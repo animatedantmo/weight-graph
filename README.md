@@ -3,8 +3,9 @@
 An Android app for tracking body weight over time. Log a reading each morning, see the trend on a
 chart you can scrub through, and move data in and out as CSV.
 
-Built with Kotlin and Jetpack Compose, storing data locally with Room. No account, no network
-access, no analytics — everything stays on the device.
+Built with Kotlin and Jetpack Compose, storing data locally with Room. No analytics. The only
+network access is the optional Google Drive backup, which talks to your own Drive and nothing
+else.
 
 ## Features
 
@@ -78,6 +79,21 @@ Date,Weight
   accepts a file.
 - Exports re-import cleanly, so an exported file works as a backup you can actually restore from.
 
+### Google Drive backup
+
+- Backs up every entry as a CSV to a **Weight Graph Backups** folder in your own Google Drive.
+- **Back up daily** runs once a day on Wi-Fi with battery not low, and **Back up now** runs one
+  immediately. The newest 7 backups are kept.
+- Uses the `drive.file` permission, so the app can only see the files it created, not the rest
+  of your Drive.
+- An empty app is never backed up, so an accidental Delete All cannot push the good backups out.
+- To restore, use **Import CSV** and pick a backup from Drive in the file picker.
+- If Drive access lapses, the next daily run says so in the backup screen instead of failing
+  silently.
+
+Setting this up needs an Android OAuth client in Google Cloud for each package name and signing
+key that builds the app — see *Google Drive setup* below.
+
 ## Building
 
 Requires a JDK matching the project's toolchain (Android Studio's bundled JBR works):
@@ -91,9 +107,24 @@ Requires a JDK matching the project's toolchain (Android Studio's bundled JBR wo
 | JVM unit tests | `./gradlew.bat testDebugUnitTest` |
 | Instrumented tests (device required) | `./gradlew.bat connectedDebugAndroidTest` |
 
+## Google Drive setup
+
+1. In the Google Cloud console, create a project and enable the **Google Drive API**.
+2. Configure the OAuth consent screen (External) and add the `.../auth/drive.file` scope.
+3. Create an **Android** OAuth client ID with the app's package name and the SHA-1 of the key
+   that signs it. Debug builds are signed with each machine's own debug keystore, so every
+   machine (and every `installSuffix` package name) needs its own client:
+
+       keytool -list -v -alias androiddebugkey -storepass android          -keystore "%USERPROFILE%/.android/debug.keystore"
+
+4. Set the consent screen's publishing status to **In production**. While it is in Testing,
+   Google expires the grant after 7 days and daily backups stop until you reconnect.
+   `drive.file` is a non-sensitive scope, so this does not require Google verification.
+
 ## Project layout
 
     app/src/main/java/org/animatedantmo/weightgraph/
+      backup/   Google Drive authorization, upload, daily worker, backup status
       data/     Room entity, DAO, database, repository, CSV parsing and export, formatting
       ui/       Compose screens: chart, entry dialog, range selector, action menu
 
