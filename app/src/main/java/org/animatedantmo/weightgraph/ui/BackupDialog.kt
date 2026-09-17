@@ -190,7 +190,10 @@ fun BackupDialog(onDismiss: () -> Unit) {
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         status.lastEntryCount?.let { count ->
-                            Text("$count entries", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "$count entries were backed up",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
                     }
                 }
