@@ -25,6 +25,8 @@ else.
   match. Pick a preset, choose any colour on a colour wheel with a brightness slider, or type a hex
   code, with a live preview. The choice is remembered. The drag marker is red, and switches to a
   contrasting colour when the line itself is close to red.
+- **Theme** — ⋮ → **Theme** sets the whole app to Light, Dark, or matching the phone's setting.
+  The choice is remembered, and the status bar icons follow it.
 - **Dates** opens a custom range that can be typed (slashes are inserted as you type) or picked
   from a calendar with a year selector for jumping back through older data.
 

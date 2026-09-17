@@ -77,6 +77,8 @@ import org.animatedantmo.weightgraph.data.date
 import org.animatedantmo.weightgraph.data.formatLb
 import org.animatedantmo.weightgraph.data.buildWeightCsv
 import org.animatedantmo.weightgraph.data.formatUsDate
+import org.animatedantmo.weightgraph.ui.theme.ThemeDialog
+import org.animatedantmo.weightgraph.ui.theme.ThemeMode
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -84,7 +86,11 @@ private const val MIN_LOADING_MS = 500L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: WeightViewModel = viewModel()) {
+fun MainScreen(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    viewModel: WeightViewModel = viewModel(),
+) {
     val loadedEntries by viewModel.entries.collectAsStateWithLifecycle()
     // The database usually answers within a frame or two, which flashed the spinner too briefly
     // to read as anything. Holding it for a minimum time makes it a deliberate beat instead.
@@ -108,6 +114,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var graphColorArgb by remember { mutableStateOf(chartPreferences.graphColorArgb()) }
     val graphColor = graphColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
     var showGraphColor by remember { mutableStateOf(false) }
+    var showTheme by remember { mutableStateOf(false) }
     var customStart by remember { mutableStateOf<LocalDate?>(null) }
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
@@ -298,6 +305,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
             onDefaultView = { showDefaultRange = true },
             graphColor = graphColor,
             onGraphColor = { showGraphColor = true },
+            onTheme = { showTheme = true },
             onDeleteAll = { showDeleteAllConfirm = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -308,6 +316,17 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
 
     if (showBackup) {
         BackupDialog(onDismiss = { showBackup = false })
+    }
+
+    if (showTheme) {
+        ThemeDialog(
+            current = themeMode,
+            onDismiss = { showTheme = false },
+            onSave = { mode ->
+                onThemeModeChange(mode)
+                showTheme = false
+            },
+        )
     }
 
     if (showGraphColor) {

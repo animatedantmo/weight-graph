@@ -50,6 +50,7 @@ fun ActionMenu(
     onDefaultView: () -> Unit,
     graphColor: Color,
     onGraphColor: () -> Unit,
+    onTheme: () -> Unit,
     onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -122,6 +123,15 @@ fun ActionMenu(
                         },
                     )
                 }
+                // Always shown: the theme applies to the whole app, entries or not.
+                MenuAction(
+                    label = "Theme",
+                    icon = rememberVectorPainter(ThemeIcon),
+                    onClick = {
+                        onExpandedChange(false)
+                        onTheme()
+                    },
+                )
                 if (hasEntries) {
                     MenuAction(
                         label = "Delete All",
@@ -199,6 +209,29 @@ private fun MenuAction(
         }
     }
 }
+
+// A circle half filled and half outlined, the usual sign for light and dark. Drawn in code rather
+// than as a drawable resource.
+private val ThemeIcon: ImageVector = ImageVector.Builder(
+    name = "Theme",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(stroke = SolidColor(Color.Black), strokeLineWidth = 2f) {
+        moveTo(4f, 12f)
+        arcToRelative(8f, 8f, 0f, true, false, 16f, 0f)
+        arcToRelative(8f, 8f, 0f, true, false, -16f, 0f)
+        close()
+    }
+    // The left half, from the top of the circle round to the bottom.
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(12f, 4f)
+        arcToRelative(8f, 8f, 0f, false, false, 0f, 16f)
+        close()
+    }
+}.build()
 
 // A small line chart with dots, drawn in code rather than as a drawable resource. Tinted with the
 // current graph colour, so the menu shows the colour that is set.
