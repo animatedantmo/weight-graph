@@ -24,6 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import org.animatedantmo.weightgraph.R
@@ -41,6 +48,8 @@ fun ActionMenu(
     onExport: () -> Unit,
     onBackup: () -> Unit,
     onDefaultView: () -> Unit,
+    graphColor: Color,
+    onGraphColor: () -> Unit,
     onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -103,6 +112,15 @@ fun ActionMenu(
                             onDefaultView()
                         },
                     )
+                    MenuAction(
+                        label = "Graph Color",
+                        icon = rememberVectorPainter(GraphLineIcon),
+                        iconTint = graphColor,
+                        onClick = {
+                            onExpandedChange(false)
+                            onGraphColor()
+                        },
+                    )
                 }
                 if (hasEntries) {
                     MenuAction(
@@ -144,6 +162,18 @@ private fun MenuAction(
     container: Color = MaterialTheme.colorScheme.secondaryContainer,
     content: Color = MaterialTheme.colorScheme.onSecondaryContainer,
 ) {
+    MenuAction(label, painterResource(icon), onClick, container, content, iconTint = content)
+}
+
+@Composable
+private fun MenuAction(
+    label: String,
+    icon: Painter,
+    onClick: () -> Unit,
+    container: Color = MaterialTheme.colorScheme.secondaryContainer,
+    content: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    iconTint: Color = content,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         // A label pill rather than a bare icon: import and export icons are easy to mix up.
         Surface(
@@ -165,7 +195,37 @@ private fun MenuAction(
             contentColor = content,
             elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp),
         ) {
-            Icon(painter = painterResource(icon), contentDescription = label)
+            Icon(painter = icon, contentDescription = label, tint = iconTint)
         }
     }
 }
+
+// A small line chart with dots, drawn in code rather than as a drawable resource. Tinted with the
+// current graph colour, so the menu shows the colour that is set.
+private val GraphLineIcon: ImageVector = ImageVector.Builder(
+    name = "GraphLine",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 2f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(3f, 17f)
+        lineTo(9f, 10f)
+        lineTo(14f, 14f)
+        lineTo(21f, 6f)
+    }
+    listOf(3f to 17f, 9f to 10f, 14f to 14f, 21f to 6f).forEach { (x, y) ->
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(x - 2.2f, y)
+            arcToRelative(2.2f, 2.2f, 0f, true, false, 4.4f, 0f)
+            arcToRelative(2.2f, 2.2f, 0f, true, false, -4.4f, 0f)
+            close()
+        }
+    }
+}.build()

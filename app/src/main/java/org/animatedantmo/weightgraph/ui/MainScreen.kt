@@ -64,6 +64,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -104,6 +105,9 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     val chartPreferences = remember { ChartPreferences(context) }
     var chartRange by remember { mutableStateOf(chartPreferences.defaultRange()) }
     var showDefaultRange by remember { mutableStateOf(false) }
+    var graphColorArgb by remember { mutableStateOf(chartPreferences.graphColorArgb()) }
+    val graphColor = graphColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
+    var showGraphColor by remember { mutableStateOf(false) }
     var customStart by remember { mutableStateOf<LocalDate?>(null) }
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
@@ -182,6 +186,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                 WeightChart(
                     allEntries = entries,
                     visibleEntries = chartEntries,
+                    lineColor = graphColor,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(220.dp),
@@ -291,6 +296,8 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
             onExport = { showExportChoice = true },
             onBackup = { showBackup = true },
             onDefaultView = { showDefaultRange = true },
+            graphColor = graphColor,
+            onGraphColor = { showGraphColor = true },
             onDeleteAll = { showDeleteAllConfirm = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -301,6 +308,18 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
 
     if (showBackup) {
         BackupDialog(onDismiss = { showBackup = false })
+    }
+
+    if (showGraphColor) {
+        GraphColorDialog(
+            currentArgb = graphColorArgb,
+            onDismiss = { showGraphColor = false },
+            onSave = { picked ->
+                chartPreferences.setGraphColorArgb(picked)
+                graphColorArgb = picked
+                showGraphColor = false
+            },
+        )
     }
 
     if (showDefaultRange) {

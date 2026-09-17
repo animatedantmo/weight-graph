@@ -21,6 +21,10 @@ else.
   readings, so the number shown is always one you recorded.
 - **Range selector** — 1 week, 2 weeks, 1 month, 1 year, all, or a chosen date range. Opens on
   the last two weeks unless another default is chosen with ⋮ → **Default Graph View**. Changing range animates as a zoom rather than cutting to a new view.
+- **Graph color** — ⋮ → **Graph Color** sets the colour of the line and its dots, which always
+  match. Pick a preset, choose any colour on a colour wheel with a brightness slider, or type a hex
+  code, with a live preview. The choice is remembered. The drag marker is red, and switches to a
+  contrasting colour when the line itself is close to red.
 - **Dates** opens a custom range that can be typed (slashes are inserted as you type) or picked
   from a calendar with a year selector for jumping back through older data.
 

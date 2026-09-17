@@ -1,15 +1,26 @@
 package org.animatedantmo.weightgraph.ui
 
 import android.content.Context
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.DatePicker
@@ -23,6 +34,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,14 +45,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
@@ -53,6 +76,10 @@ import org.animatedantmo.weightgraph.data.WeightEntry
 import org.animatedantmo.weightgraph.data.parseDate
 import org.animatedantmo.weightgraph.data.formatUsDate
 import java.time.Instant
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -85,12 +112,324 @@ class ChartPreferences(context: Context) {
         prefs.edit().putString(KEY_DEFAULT_RANGE, range.name).apply()
     }
 
+    // Null means the theme's own colour, so the default keeps following the theme.
+    fun graphColorArgb(): Int? =
+        if (prefs.contains(KEY_GRAPH_COLOR_ARGB)) prefs.getInt(KEY_GRAPH_COLOR_ARGB, 0) else null
+
+    fun setGraphColorArgb(argb: Int?) {
+        prefs.edit().apply {
+            if (argb == null) remove(KEY_GRAPH_COLOR_ARGB) else putInt(KEY_GRAPH_COLOR_ARGB, argb)
+            // Left by the earlier preset-only version of this setting.
+            remove(KEY_LEGACY_GRAPH_COLOR)
+        }.apply()
+    }
+
     private companion object {
         const val KEY_DEFAULT_RANGE = "default_range"
+        const val KEY_GRAPH_COLOR_ARGB = "graph_color_argb"
+        const val KEY_LEGACY_GRAPH_COLOR = "graph_color"
 
         // Two weeks: recent days are what a daily weigh-in is usually checked for, with enough of
         // them to show a trend past day-to-day noise.
         val FALLBACK_RANGE = ChartRange.TWO_WEEKS
+    }
+}
+
+// Quick picks above the wheel. A null colour is the theme's own, which is the default.
+private data class ColorPreset(val label: String, val argb: Int?)
+
+private val COLOR_PRESETS = listOf(
+    ColorPreset("Default", null),
+    ColorPreset("Green", 0xFF34C759.toInt()),
+    ColorPreset("Teal", 0xFF30B0C7.toInt()),
+    ColorPreset("Purple", 0xFFAF52DE.toInt()),
+    ColorPreset("Pink", 0xFFFF2D92.toInt()),
+    ColorPreset("Orange", 0xFFFF9500.toInt()),
+    ColorPreset("Yellow", 0xFFFFCC00.toInt()),
+    ColorPreset("Gray", 0xFF8E8E93.toInt()),
+)
+
+private const val SWATCHES_PER_ROW = 4
+
+// The brightness slider stops short of black, which would vanish against the dark background. A
+// typed hex code is taken exactly as entered.
+private const val MIN_BRIGHTNESS = 0.25f
+
+private val WHEEL_HUES = listOf(
+    Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red,
+)
+
+private data class Hsv(val hue: Float, val saturation: Float, val value: Float) {
+    fun toColor(): Color = Color.hsv(hue, saturation, value)
+
+    companion object {
+        fun of(argb: Int): Hsv {
+            val out = FloatArray(3)
+            android.graphics.Color.colorToHSV(argb, out)
+            return Hsv(out[0], out[1], out[2])
+        }
+    }
+}
+
+private fun Int.toHex(): String = "%06X".format(this and 0xFFFFFF)
+
+// Same length in and out, so cursor positions map straight across.
+private object UppercaseTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText =
+        TransformedText(AnnotatedString(text.text.uppercase()), OffsetMapping.Identity)
+}
+
+@Composable
+fun GraphColorDialog(
+    currentArgb: Int?,
+    onDismiss: () -> Unit,
+    onSave: (Int?) -> Unit,
+) {
+    val themeArgb = MaterialTheme.colorScheme.primary.toArgb()
+
+    // The colour that Save stores, null for the theme default. The wheel position and the hex text
+    // are kept alongside it so that each control follows changes made with the others.
+    var pickedArgb by remember { mutableStateOf(currentArgb) }
+    var hsv by remember { mutableStateOf(Hsv.of(currentArgb ?: themeArgb)) }
+    var hexText by remember { mutableStateOf((currentArgb ?: themeArgb).toHex()) }
+
+    fun pickHsv(newHsv: Hsv) {
+        hsv = newHsv
+        val argb = newHsv.toColor().toArgb()
+        pickedArgb = argb
+        hexText = argb.toHex()
+    }
+
+    fun pickPreset(preset: ColorPreset) {
+        val argb = preset.argb ?: themeArgb
+        pickedArgb = preset.argb
+        hsv = Hsv.of(argb)
+        hexText = argb.toHex()
+    }
+
+    // Same pattern as the Add Weight dialog: nothing is flagged while typing, and a Save that
+    // cannot go through buzzes and explains itself under the field.
+    var saveRejected by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+
+    val hexComplete = hexText.length == 6
+    val hexError = when {
+        hexComplete || !saveRejected -> null
+        hexText.isEmpty() -> "Enter a hex color"
+        else -> "Enter 6 digits, such as 34C759"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Graph Color", style = MaterialTheme.typography.labelLarge) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "The color of the graph line and its dots.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                GraphColorPreview(color = Color(pickedArgb ?: themeArgb))
+
+                COLOR_PRESETS.chunked(SWATCHES_PER_ROW).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        row.forEach { preset ->
+                            ColorSwatch(
+                                label = preset.label,
+                                color = Color(preset.argb ?: themeArgb),
+                                selected = preset.argb == pickedArgb,
+                                onClick = { pickPreset(preset) },
+                            )
+                        }
+                    }
+                }
+
+                ColorWheel(
+                    hsv = hsv,
+                    onChange = ::pickHsv,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(200.dp),
+                )
+
+                Column {
+                    Text("Brightness", style = MaterialTheme.typography.labelMedium)
+                    Slider(
+                        value = hsv.value.coerceIn(MIN_BRIGHTNESS, 1f),
+                        onValueChange = { pickHsv(hsv.copy(value = it)) },
+                        valueRange = MIN_BRIGHTNESS..1f,
+                    )
+                }
+
+                OutlinedTextField(
+                    value = hexText,
+                    onValueChange = { input ->
+                        // Letters stay in the case they were typed and are only shown uppercase.
+                        // Rewriting them here fights the keyboard's composing text and drops
+                        // characters during fast typing.
+                        val cleaned = input.removePrefix("#")
+                            .filter { it.isDigit() || it.uppercaseChar() in 'A'..'F' }
+                            .take(6)
+                        hexText = cleaned
+                        if (cleaned.length == 6) {
+                            val argb = cleaned.toInt(16) or 0xFF000000.toInt()
+                            pickedArgb = argb
+                            hsv = Hsv.of(argb)
+                        }
+                    },
+                    label = { Text("Hex") },
+                    prefix = { Text("#") },
+                    visualTransformation = UppercaseTransformation,
+                    singleLine = true,
+                    isError = hexError != null,
+                    supportingText = hexError?.let { { Text(it) } },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false,
+                        keyboardType = KeyboardType.Ascii,
+                        imeAction = ImeAction.Done,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            // Always enabled, like Add Weight's Save. A half-typed hex code is refused rather than
+            // saving whichever colour came before it.
+            TextButton(
+                onClick = {
+                    if (hexComplete) {
+                        onSave(pickedArgb)
+                    } else {
+                        saveRejected = true
+                        haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                    }
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+// A few points of line and dots on the chart's own background, to judge the colour in context.
+@Composable
+private fun GraphColorPreview(color: Color) {
+    val background = MaterialTheme.colorScheme.background
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(background),
+    ) {
+        val points = listOf(0.25f, 0.7f, 0.45f, 0.6f, 0.3f).mapIndexed { index, level ->
+            Offset(size.width * (0.1f + index * 0.2f), size.height * level)
+        }
+        val path = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            points.drop(1).forEach { lineTo(it.x, it.y) }
+        }
+        drawPath(path, color, style = Stroke(width = 2.5.dp.toPx()))
+        points.forEach { drawCircle(color, radius = 4.dp.toPx(), center = it) }
+    }
+}
+
+@Composable
+private fun ColorSwatch(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+            .padding(2.dp),
+    ) {
+        // A ring around the chosen swatch, with a gap so it reads against any swatch colour.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .border(
+                    width = 3.dp,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                    shape = CircleShape,
+                ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+/**
+ * Hue runs around the wheel and saturation from white at the centre to full colour at the rim.
+ * Brightness is not part of the wheel's position; it is set with the slider and darkens the wheel
+ * to match.
+ */
+@Composable
+private fun ColorWheel(hsv: Hsv, onChange: (Hsv) -> Unit, modifier: Modifier = Modifier) {
+    // The gesture handler is installed once, so it reads the latest values through these.
+    val latestHsv by rememberUpdatedState(hsv)
+    val latestOnChange by rememberUpdatedState(onChange)
+
+    Canvas(
+        modifier = modifier.pointerInput(Unit) {
+            fun pick(position: Offset) {
+                val radius = size.width / 2f
+                val dx = position.x - radius
+                val dy = position.y - radius
+                val hue = ((Math.toDegrees(atan2(dy, dx).toDouble()) + 360.0) % 360.0).toFloat()
+                val saturation = (hypot(dx, dy) / radius).coerceIn(0f, 1f)
+                latestOnChange(latestHsv.copy(hue = hue, saturation = saturation))
+            }
+            // Consuming every move keeps the dialog's scrolling from taking over the drag.
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                pick(down.position)
+                down.consume()
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                    if (change == null || !change.pressed) break
+                    pick(change.position)
+                    change.consume()
+                }
+            }
+        },
+    ) {
+        val radius = size.minDimension / 2f
+        drawCircle(Brush.sweepGradient(WHEEL_HUES), radius)
+        drawCircle(Brush.radialGradient(listOf(Color.White, Color.Transparent), center, radius), radius)
+        drawCircle(Color.Black.copy(alpha = 1f - hsv.value), radius)
+
+        val angle = Math.toRadians(hsv.hue.toDouble())
+        val thumb = center + Offset(
+            (cos(angle) * hsv.saturation * radius).toFloat(),
+            (sin(angle) * hsv.saturation * radius).toFloat(),
+        )
+        drawCircle(Color.White, radius = 13.dp.toPx(), center = thumb)
+        drawCircle(hsv.toColor(), radius = 10.dp.toPx(), center = thumb)
+        drawCircle(
+            Color.Black.copy(alpha = 0.45f),
+            radius = 13.dp.toPx(),
+            center = thumb,
+            style = Stroke(width = 1.dp.toPx()),
+        )
     }
 }
 

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -91,10 +92,31 @@ private val POINT_LABEL_GAP = 7.dp
 // Deliberately not the line colour: the marker has to stand out against the line it sits on.
 private val MARKER_COLOR = Color(0xFFFF3B30)
 
+// How close in hue, in degrees, a line colour can get to the red marker before the marker switches
+// to the theme's text colour instead.
+private const val MARKER_HUE_TOLERANCE = 30f
+
+// Washed-out or dark colours read as grey or black rather than red, so they keep the red marker.
+private const val MARKER_MIN_SATURATION = 0.35f
+private const val MARKER_MIN_BRIGHTNESS = 0.35f
+
+private fun isNearMarkerRed(color: Color): Boolean {
+    val line = FloatArray(3)
+    android.graphics.Color.colorToHSV(color.toArgb(), line)
+    val marker = FloatArray(3)
+    android.graphics.Color.colorToHSV(MARKER_COLOR.toArgb(), marker)
+    val hueDistance = abs(line[0] - marker[0]).let { minOf(it, 360f - it) }
+    return hueDistance < MARKER_HUE_TOLERANCE &&
+        line[1] >= MARKER_MIN_SATURATION &&
+        line[2] >= MARKER_MIN_BRIGHTNESS
+}
+
 @Composable
 fun WeightChart(
     allEntries: List<WeightEntry>,
     visibleEntries: List<WeightEntry>,
+    // Used for both the line and its dots, so they always match.
+    lineColor: Color,
     modifier: Modifier = Modifier,
 ) {
     // The line is always drawn from every reading; only the window onto it changes. That lets a
@@ -114,7 +136,6 @@ fun WeightChart(
     }
 
     val measurer = rememberTextMeasurer()
-    val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val crosshairColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
@@ -122,6 +143,11 @@ fun WeightChart(
     val readoutBackground = MaterialTheme.colorScheme.surfaceVariant
     val readoutText = MaterialTheme.colorScheme.onSurfaceVariant
     val chartBackground = MaterialTheme.colorScheme.background
+    val markerColor = if (isNearMarkerRed(lineColor)) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MARKER_COLOR
+    }
 
     // Derived once per data change rather than on every frame.
     val stats = remember(entries) { ChartStats.from(entries) }
@@ -407,13 +433,13 @@ fun WeightChart(
                     floatArrayOf(4.dp.toPx(), 4.dp.toPx())
                 ),
             )
-            // Knocked out of the line first, so the blue does not show through the marker.
+            // Knocked out of the line first, so the line colour does not show through the marker.
             drawCircle(
                 chartBackground,
                 radius = (POINT_DOT_RADIUS + MARKER_HALO).toPx(),
                 center = Offset(x, y),
             )
-            drawCircle(MARKER_COLOR, radius = POINT_DOT_RADIUS.toPx(), center = Offset(x, y))
+            drawCircle(markerColor, radius = POINT_DOT_RADIUS.toPx(), center = Offset(x, y))
 
             val text = formatUsDate(entry.date) + "   " + formatLb(entry.weightLb) + " lb"
             val measured = measurer.measure(AnnotatedString(text), readoutStyle)
