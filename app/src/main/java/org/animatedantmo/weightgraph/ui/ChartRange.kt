@@ -1,5 +1,6 @@
 package org.animatedantmo.weightgraph.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +8,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.FilterChip
@@ -16,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -35,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
@@ -53,13 +58,91 @@ import java.time.ZoneOffset
 
 // days = null means the window is not a fixed length: ALL takes everything, CUSTOM uses the
 // explicit start and end dates the user picked.
-enum class ChartRange(val label: String, val days: Long?) {
-    WEEK("1W", 7),
-    TWO_WEEKS("2W", 14),
-    MONTH("1M", 30),
-    YEAR("1Y", 365),
-    ALL("All", null),
-    CUSTOM("Dates", null),
+enum class ChartRange(val label: String, val longLabel: String, val days: Long?) {
+    WEEK("1W", "1 week", 7),
+    TWO_WEEKS("2W", "2 weeks", 14),
+    MONTH("1M", "1 month", 30),
+    YEAR("1Y", "1 year", 365),
+    ALL("All", "All entries", null),
+    CUSTOM("Dates", "Chosen dates", null),
+}
+
+// Dates is not offered as a default: it needs a start and end picked, which a fresh launch has not.
+val defaultableRanges: List<ChartRange> = ChartRange.entries.filter { it != ChartRange.CUSTOM }
+
+// The range the chart opens on, remembered across launches.
+class ChartPreferences(context: Context) {
+
+    private val prefs = context.applicationContext
+        .getSharedPreferences("chart", Context.MODE_PRIVATE)
+
+    fun defaultRange(): ChartRange =
+        prefs.getString(KEY_DEFAULT_RANGE, null)
+            ?.let { name -> defaultableRanges.firstOrNull { it.name == name } }
+            ?: FALLBACK_RANGE
+
+    fun setDefaultRange(range: ChartRange) {
+        prefs.edit().putString(KEY_DEFAULT_RANGE, range.name).apply()
+    }
+
+    private companion object {
+        const val KEY_DEFAULT_RANGE = "default_range"
+
+        // Two weeks: recent days are what a daily weigh-in is usually checked for, with enough of
+        // them to show a trend past day-to-day noise.
+        val FALLBACK_RANGE = ChartRange.TWO_WEEKS
+    }
+}
+
+@Composable
+fun DefaultRangeDialog(
+    current: ChartRange,
+    onDismiss: () -> Unit,
+    onSelect: (ChartRange) -> Unit,
+) {
+    // Tapping an option only marks it; nothing is saved until Save.
+    var picked by remember { mutableStateOf(current) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Default Graph View", style = MaterialTheme.typography.labelLarge) },
+        text = {
+            Column {
+                Text(
+                    "The range the graph shows when the app opens.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                defaultableRanges.forEach { range ->
+                    // The whole row is the tap target, not just the small radio circle.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = range == picked,
+                                onClick = { picked = range },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 4.dp),
+                    ) {
+                        RadioButton(selected = range == picked, onClick = null)
+                        Text(
+                            range.longLabel,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelect(picked) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 /**

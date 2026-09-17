@@ -40,6 +40,7 @@ fun ActionMenu(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onBackup: () -> Unit,
+    onDefaultView: () -> Unit,
     onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -92,6 +93,17 @@ fun ActionMenu(
                         onBackup()
                     },
                 )
+                if (hasEntries) {
+                    // Only with entries, since there is no graph to set a view for without them.
+                    MenuAction(
+                        label = "Default Graph View",
+                        icon = R.drawable.ic_calendar,
+                        onClick = {
+                            onExpandedChange(false)
+                            onDefaultView()
+                        },
+                    )
+                }
                 if (hasEntries) {
                     MenuAction(
                         label = "Delete All",

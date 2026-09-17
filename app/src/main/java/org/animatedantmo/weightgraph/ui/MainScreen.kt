@@ -101,8 +101,9 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
     var showEntrySheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    // Opens on the last week: recent days are what a daily weigh-in is usually checked for.
-    var chartRange by remember { mutableStateOf(ChartRange.WEEK) }
+    val chartPreferences = remember { ChartPreferences(context) }
+    var chartRange by remember { mutableStateOf(chartPreferences.defaultRange()) }
+    var showDefaultRange by remember { mutableStateOf(false) }
     var customStart by remember { mutableStateOf<LocalDate?>(null) }
     var customEnd by remember { mutableStateOf<LocalDate?>(null) }
     var showRangePicker by remember { mutableStateOf(false) }
@@ -289,6 +290,7 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
             },
             onExport = { showExportChoice = true },
             onBackup = { showBackup = true },
+            onDefaultView = { showDefaultRange = true },
             onDeleteAll = { showDeleteAllConfirm = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -299,6 +301,21 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
 
     if (showBackup) {
         BackupDialog(onDismiss = { showBackup = false })
+    }
+
+    if (showDefaultRange) {
+        DefaultRangeDialog(
+            current = chartPreferences.defaultRange(),
+            onDismiss = { showDefaultRange = false },
+            onSelect = { range ->
+                chartPreferences.setDefaultRange(range)
+                // Switch to it now too, so the choice is visible straight away.
+                chartRange = range
+                customStart = null
+                customEnd = null
+                showDefaultRange = false
+            },
+        )
     }
 
     if (showEntrySheet) {
