@@ -20,13 +20,17 @@ else.
   where it crosses the line, and a readout of that day's exact date and weight. It snaps to real
   readings, so the number shown is always one you recorded.
 - **Range selector** — 1 week, 2 weeks, 1 month, 1 year, all, or a chosen date range. Opens on
-  the last two weeks unless another default is chosen with ⋮ → **Default Graph View**. Changing range animates as a zoom rather than cutting to a new view.
-- **Graph color** — ⋮ → **Graph Color** sets the colour of the line and its dots, which always
-  match. Pick a preset, choose any colour on a colour wheel with a brightness slider, or type a hex
-  code, with a live preview. The choice is remembered. The drag marker is red, and switches to a
-  contrasting colour when the line itself is close to red.
-- **Theme** — ⋮ → **Theme** sets the whole app to Light, Dark, or matching the phone's setting.
-  The choice is remembered, and the status bar icons follow it.
+  the last two weeks unless another default is chosen in Settings. Changing range animates as a
+  zoom rather than cutting to a new view.
+- **Settings** — ⋮ → **Settings** opens a screen listing each setting with its current value:
+  - **Default Graph View** — the range the graph opens on.
+  - **Graph Color** — the colour of the line and its dots, which always match. Pick a preset,
+    choose any colour on a colour wheel with a brightness slider, or type a hex code, with a live
+    preview. The drag marker is red, and switches to a contrasting colour when the line itself is
+    close to red.
+  - **Theme** — Light, Dark, or matching the phone's setting. The status bar icons follow it.
+
+  Every setting is remembered across launches.
 - **Dates** opens a custom range that can be typed (slashes are inserted as you type) or picked
   from a calendar with a year selector for jumping back through older data.
 

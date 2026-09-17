@@ -2,6 +2,23 @@ package org.animatedantmo.weightgraph.ui
 
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -79,6 +96,7 @@ import org.animatedantmo.weightgraph.data.buildWeightCsv
 import org.animatedantmo.weightgraph.data.formatUsDate
 import org.animatedantmo.weightgraph.ui.theme.ThemeDialog
 import org.animatedantmo.weightgraph.ui.theme.ThemeMode
+import org.animatedantmo.weightgraph.ui.theme.settingLabel
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -109,7 +127,9 @@ fun MainScreen(
 
     val listState = rememberLazyListState()
     val chartPreferences = remember { ChartPreferences(context) }
-    var chartRange by remember { mutableStateOf(chartPreferences.defaultRange()) }
+    var defaultRange by remember { mutableStateOf(chartPreferences.defaultRange()) }
+    var chartRange by remember { mutableStateOf(defaultRange) }
+    var showSettings by remember { mutableStateOf(false) }
     var showDefaultRange by remember { mutableStateOf(false) }
     var graphColorArgb by remember { mutableStateOf(chartPreferences.graphColorArgb()) }
     val graphColor = graphColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
@@ -302,17 +322,35 @@ fun MainScreen(
             },
             onExport = { showExportChoice = true },
             onBackup = { showBackup = true },
-            onDefaultView = { showDefaultRange = true },
-            graphColor = graphColor,
-            onGraphColor = { showGraphColor = true },
-            onTheme = { showTheme = true },
+            onSettings = { showSettings = true },
             onDeleteAll = { showDeleteAllConfirm = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp),
         )
+
+        // Drawn over the main screen rather than replacing it, so the list keeps its scroll
+        // position and the chart its range while Settings is open.
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut(),
+        ) {
+            SettingsScreen(
+                defaultRange = defaultRange,
+                graphColor = graphColor,
+                graphColorArgb = graphColorArgb,
+                themeMode = themeMode,
+                onBack = { showSettings = false },
+                onDefaultRange = { showDefaultRange = true },
+                onGraphColor = { showGraphColor = true },
+                onTheme = { showTheme = true },
+            )
+        }
         }
     }
+
+    BackHandler(enabled = showSettings) { showSettings = false }
 
     if (showBackup) {
         BackupDialog(onDismiss = { showBackup = false })
@@ -343,10 +381,11 @@ fun MainScreen(
 
     if (showDefaultRange) {
         DefaultRangeDialog(
-            current = chartPreferences.defaultRange(),
+            current = defaultRange,
             onDismiss = { showDefaultRange = false },
             onSelect = { range ->
                 chartPreferences.setDefaultRange(range)
+                defaultRange = range
                 // Switch to it now too, so the choice is visible straight away.
                 chartRange = range
                 customStart = null
@@ -694,3 +733,122 @@ private fun DeleteAllDialog(
 // capitalise the first letter and a trailing space is easy to leave behind.
 fun isDeleteConfirmation(text: String): Boolean =
     text.trim().equals("delete", ignoreCase = true)
+
+// Settings as a full screen over the main one. Each row shows its current value and opens the
+// same dialog that sets it, so the dialogs stay the single place each setting is edited.
+@Composable
+private fun SettingsScreen(
+    defaultRange: ChartRange,
+    graphColor: Color,
+    graphColorArgb: Int?,
+    themeMode: ThemeMode,
+    onBack: () -> Unit,
+    onDefaultRange: () -> Unit,
+    onGraphColor: () -> Unit,
+    onTheme: () -> Unit,
+) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(rememberVectorPainter(BackArrowIcon), contentDescription = "Back")
+                }
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
+            SettingRow(
+                icon = painterResource(R.drawable.ic_calendar),
+                title = "Default Graph View",
+                value = defaultRange.settingLabel,
+                onClick = onDefaultRange,
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            SettingRow(
+                icon = rememberVectorPainter(GraphLineIcon),
+                iconTint = graphColor,
+                title = "Graph Color",
+                value = graphColorArgb?.let { graphColorLabel(it) }
+                    ?: (colorName(graphColor.toArgb()) + " (default)"),
+                onClick = onGraphColor,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(graphColor),
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            SettingRow(
+                icon = rememberVectorPainter(ThemeIcon),
+                title = "Theme",
+                value = themeMode.settingLabel,
+                onClick = onTheme,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(
+    icon: Painter,
+    title: String,
+    value: String?,
+    onClick: () -> Unit,
+    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = iconTint)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (value != null) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        trailing?.invoke()
+    }
+}
+
+private val BackArrowIcon: ImageVector = ImageVector.Builder(
+    name = "BackArrow",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 2f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(20f, 12f)
+        lineTo(4f, 12f)
+        moveTo(10f, 6f)
+        lineTo(4f, 12f)
+        lineTo(10f, 18f)
+    }
+}.build()

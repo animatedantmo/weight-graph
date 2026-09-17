@@ -47,10 +47,7 @@ fun ActionMenu(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onBackup: () -> Unit,
-    onDefaultView: () -> Unit,
-    graphColor: Color,
-    onGraphColor: () -> Unit,
-    onTheme: () -> Unit,
+    onSettings: () -> Unit,
     onDeleteAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -103,33 +100,13 @@ fun ActionMenu(
                         onBackup()
                     },
                 )
-                if (hasEntries) {
-                    // Only with entries, since there is no graph to set a view for without them.
-                    MenuAction(
-                        label = "Default Graph View",
-                        icon = R.drawable.ic_calendar,
-                        onClick = {
-                            onExpandedChange(false)
-                            onDefaultView()
-                        },
-                    )
-                    MenuAction(
-                        label = "Graph Color",
-                        icon = rememberVectorPainter(GraphLineIcon),
-                        iconTint = graphColor,
-                        onClick = {
-                            onExpandedChange(false)
-                            onGraphColor()
-                        },
-                    )
-                }
-                // Always shown: the theme applies to the whole app, entries or not.
+                // Always shown: the theme in there applies whether or not there are entries.
                 MenuAction(
-                    label = "Theme",
-                    icon = rememberVectorPainter(ThemeIcon),
+                    label = "Settings",
+                    icon = rememberVectorPainter(SettingsIcon),
                     onClick = {
                         onExpandedChange(false)
-                        onTheme()
+                        onSettings()
                     },
                 )
                 if (hasEntries) {
@@ -210,9 +187,35 @@ private fun MenuAction(
     }
 }
 
-// A circle half filled and half outlined, the usual sign for light and dark. Drawn in code rather
-// than as a drawable resource.
-private val ThemeIcon: ImageVector = ImageVector.Builder(
+// Three slider tracks with knobs at different positions. The icons in this file are drawn in code
+// rather than added as drawable resources.
+internal val SettingsIcon: ImageVector = ImageVector.Builder(
+    name = "Settings",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    listOf(6f to 15f, 12f to 8f, 18f to 16f).forEach { (y, knobX) ->
+        path(
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+        ) {
+            moveTo(3f, y)
+            lineTo(21f, y)
+        }
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(knobX - 2.8f, y)
+            arcToRelative(2.8f, 2.8f, 0f, true, false, 5.6f, 0f)
+            arcToRelative(2.8f, 2.8f, 0f, true, false, -5.6f, 0f)
+            close()
+        }
+    }
+}.build()
+
+// A circle half filled and half outlined, the usual sign for light and dark.
+internal val ThemeIcon: ImageVector = ImageVector.Builder(
     name = "Theme",
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,
@@ -233,9 +236,8 @@ private val ThemeIcon: ImageVector = ImageVector.Builder(
     }
 }.build()
 
-// A small line chart with dots, drawn in code rather than as a drawable resource. Tinted with the
-// current graph colour, so the menu shows the colour that is set.
-private val GraphLineIcon: ImageVector = ImageVector.Builder(
+// A small line chart with dots, tinted with the current graph colour where it is shown.
+internal val GraphLineIcon: ImageVector = ImageVector.Builder(
     name = "GraphLine",
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,

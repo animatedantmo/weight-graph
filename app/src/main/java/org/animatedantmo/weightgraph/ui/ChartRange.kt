@@ -97,6 +97,14 @@ enum class ChartRange(val label: String, val longLabel: String, val days: Long?)
 // Dates is not offered as a default: it needs a start and end picked, which a fresh launch has not.
 val defaultableRanges: List<ChartRange> = ChartRange.entries.filter { it != ChartRange.CUSTOM }
 
+// Two weeks: recent days are what a daily weigh-in is usually checked for, with enough of them to
+// show a trend past day-to-day noise. Used until another default is chosen.
+val FACTORY_DEFAULT_RANGE = ChartRange.TWO_WEEKS
+
+// The long label, marked when it is the range the app ships with.
+val ChartRange.settingLabel: String
+    get() = if (this == FACTORY_DEFAULT_RANGE) "$longLabel (default)" else longLabel
+
 // The range the chart opens on, remembered across launches.
 class ChartPreferences(context: Context) {
 
@@ -106,7 +114,7 @@ class ChartPreferences(context: Context) {
     fun defaultRange(): ChartRange =
         prefs.getString(KEY_DEFAULT_RANGE, null)
             ?.let { name -> defaultableRanges.firstOrNull { it.name == name } }
-            ?: FALLBACK_RANGE
+            ?: FACTORY_DEFAULT_RANGE
 
     fun setDefaultRange(range: ChartRange) {
         prefs.edit().putString(KEY_DEFAULT_RANGE, range.name).apply()
@@ -128,10 +136,6 @@ class ChartPreferences(context: Context) {
         const val KEY_DEFAULT_RANGE = "default_range"
         const val KEY_GRAPH_COLOR_ARGB = "graph_color_argb"
         const val KEY_LEGACY_GRAPH_COLOR = "graph_color"
-
-        // Two weeks: recent days are what a daily weigh-in is usually checked for, with enough of
-        // them to show a trend past day-to-day noise.
-        val FALLBACK_RANGE = ChartRange.TWO_WEEKS
     }
 }
 
@@ -172,6 +176,30 @@ private data class Hsv(val hue: Float, val saturation: Float, val value: Float) 
 }
 
 private fun Int.toHex(): String = "%06X".format(this and 0xFFFFFF)
+
+// How the Settings screen names a chosen graph colour: the preset's name when it is one, otherwise
+// its hex code.
+fun graphColorLabel(argb: Int): String =
+    COLOR_PRESETS.firstOrNull { it.argb == argb }?.label ?: ("Custom #" + argb.toHex())
+
+// A plain colour name for any colour, by hue. The default graph colour comes from the phone's
+// wallpaper-based theme, so it has no fixed name and is described this way instead.
+fun colorName(argb: Int): String {
+    val hsv = Hsv.of(argb)
+    return when {
+        hsv.value < 0.2f -> "Black"
+        hsv.saturation < 0.15f -> if (hsv.value > 0.85f) "White" else "Gray"
+        hsv.hue < 15f -> "Red"
+        hsv.hue < 45f -> "Orange"
+        hsv.hue < 70f -> "Yellow"
+        hsv.hue < 160f -> "Green"
+        hsv.hue < 195f -> "Teal"
+        hsv.hue < 255f -> "Blue"
+        hsv.hue < 290f -> "Purple"
+        hsv.hue < 345f -> "Pink"
+        else -> "Red"
+    }
+}
 
 // Same length in and out, so cursor positions map straight across.
 private object UppercaseTransformation : VisualTransformation {
@@ -239,8 +267,11 @@ fun GraphColorDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         row.forEach { preset ->
+                            // The default swatch is the theme's colour, named by what it looks like
+                            // rather than as "Default", with the default marked underneath.
                             ColorSwatch(
-                                label = preset.label,
+                                label = if (preset.argb == null) colorName(themeArgb) else preset.label,
+                                note = if (preset.argb == null) "(default)" else null,
                                 color = Color(preset.argb ?: themeArgb),
                                 selected = preset.argb == pickedArgb,
                                 onClick = { pickPreset(preset) },
@@ -344,7 +375,13 @@ private fun GraphColorPreview(color: Color) {
 }
 
 @Composable
-private fun ColorSwatch(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
+private fun ColorSwatch(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    note: String? = null,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -374,6 +411,13 @@ private fun ColorSwatch(label: String, color: Color, selected: Boolean, onClick:
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(top = 2.dp),
         )
+        if (note != null) {
+            Text(
+                note,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -467,7 +511,7 @@ fun DefaultRangeDialog(
                     ) {
                         RadioButton(selected = range == picked, onClick = null)
                         Text(
-                            range.longLabel,
+                            range.settingLabel,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(start = 12.dp),
                         )

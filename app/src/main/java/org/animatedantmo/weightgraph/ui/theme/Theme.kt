@@ -57,6 +57,13 @@ enum class ThemeMode(val label: String) {
     DARK("Dark"),
 }
 
+// Used until another theme is chosen.
+val FACTORY_DEFAULT_THEME = ThemeMode.SYSTEM
+
+// The label, marked when it is the theme the app ships with.
+val ThemeMode.settingLabel: String
+    get() = if (this == FACTORY_DEFAULT_THEME) "$label (default)" else label
+
 @Composable
 fun ThemeMode.isDark(): Boolean = when (this) {
     ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -73,7 +80,7 @@ class ThemePreferences(context: Context) {
     fun themeMode(): ThemeMode =
         prefs.getString(KEY_THEME_MODE, null)
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
-            ?: ThemeMode.SYSTEM
+            ?: FACTORY_DEFAULT_THEME
 
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
@@ -113,7 +120,7 @@ fun ThemeDialog(
                     ) {
                         RadioButton(selected = mode == picked, onClick = null)
                         Text(
-                            mode.label,
+                            mode.settingLabel,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(start = 12.dp),
                         )
