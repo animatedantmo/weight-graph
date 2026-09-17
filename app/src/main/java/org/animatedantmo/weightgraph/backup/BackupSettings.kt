@@ -22,8 +22,17 @@ class BackupSettings(context: Context) {
         dailyEnabled = prefs.getBoolean(KEY_DAILY, false),
         lastSuccessMillis = prefs.getLong(KEY_LAST_SUCCESS, 0L).takeIf { it > 0L },
         lastEntryCount = prefs.getInt(KEY_LAST_COUNT, -1).takeIf { it >= 0 },
-        lastError = prefs.getString(KEY_LAST_ERROR, null),
+        lastError = prefs.getString(KEY_LAST_ERROR, null)?.let(::readable),
     )
+
+    // Earlier builds stored Drive's raw JSON error body, which is unreadable on screen. Those are
+    // shown as a plain sentence until the next successful backup clears them.
+    private fun readable(error: String): String = when {
+        !error.startsWith(RAW_DRIVE_ERROR_PREFIX) -> error
+        error.startsWith(RAW_DRIVE_ERROR_PREFIX + "401") ->
+            "Google Drive needs reconnecting. Tap Back up now."
+        else -> "The last backup failed. Tap Back up now to try again."
+    }
 
     fun setAuthorized(authorized: Boolean) {
         prefs.edit().putBoolean(KEY_AUTHORIZED, authorized).apply()
@@ -51,5 +60,6 @@ class BackupSettings(context: Context) {
         const val KEY_LAST_SUCCESS = "last_success_millis"
         const val KEY_LAST_COUNT = "last_entry_count"
         const val KEY_LAST_ERROR = "last_error"
+        const val RAW_DRIVE_ERROR_PREFIX = "Google Drive returned HTTP "
     }
 }

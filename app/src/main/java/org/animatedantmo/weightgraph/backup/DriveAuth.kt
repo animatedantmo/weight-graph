@@ -3,6 +3,7 @@ package org.animatedantmo.weightgraph.backup
 import android.content.Context
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.ClearTokenRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
@@ -38,6 +39,15 @@ object DriveAuth {
     suspend fun silentToken(context: Context): String? {
         val result = authorize(context)
         return if (result.hasResolution()) null else result.accessToken
+    }
+
+    // Play services caches access tokens and keeps handing out the same one until it expires,
+    // even after the grant was revoked. Clearing a token Drive rejected makes the next authorize
+    // call fetch a fresh one, or ask for consent again if access is really gone.
+    suspend fun clearToken(context: Context, token: String) {
+        Identity.getAuthorizationClient(context)
+            .clearToken(ClearTokenRequest.builder().setToken(token).build())
+            .await()
     }
 }
 

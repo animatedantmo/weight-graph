@@ -16,6 +16,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,11 +57,21 @@ fun BackupDialog(onDismiss: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf<PendingAction?>(null) }
 
+    // Set when Drive rejects a cached token, so a fresh authorization runs once on its own. The
+    // second flag stops a token that keeps being rejected from looping.
+    var retryAfterRejectedToken by remember { mutableStateOf(false) }
+    var rejectedTokenRetried by remember { mutableStateOf(false) }
+
+    // Once an attempt starts in this dialog, its own result replaces whatever the last daily run
+    // stored, so an old error does not flash up while Google's screen is loading.
+    var attempted by remember { mutableStateOf(false) }
+
     fun refresh() {
         status = settings.read()
     }
 
     fun proceed(action: PendingAction, token: String?) {
+        running = false
         if (token == null) {
             message = "Google did not return Drive access. Try again."
             return
@@ -75,12 +86,20 @@ fun BackupDialog(onDismiss: () -> Unit) {
             PendingAction.BACK_UP_NOW -> scope.launch {
                 running = true
                 message = null
-                message = when (val outcome = runDriveBackup(context, token)) {
+                val outcome = runDriveBackup(context, token)
+                running = false
+                if (outcome == BackupOutcome.TokenRejected && !rejectedTokenRetried) {
+                    rejectedTokenRetried = true
+                    retryAfterRejectedToken = true
+                    return@launch
+                }
+                message = when (outcome) {
                     is BackupOutcome.Success -> "Backed up " + outcome.entryCount + " entries."
                     BackupOutcome.NothingToBackUp -> "There are no entries to back up."
                     is BackupOutcome.Failed -> outcome.message
+                    BackupOutcome.TokenRejected ->
+                        "Google Drive did not accept the app's access. Tap Back up now to reconnect."
                 }
-                running = false
                 refresh()
             }
         }
@@ -115,21 +134,34 @@ fun BackupDialog(onDismiss: () -> Unit) {
 
     fun requestAccess(action: PendingAction) {
         message = null
+        attempted = true
+        // Spinner while Google decides whether to show its screen, which can take a few seconds.
+        running = true
         scope.launch {
             try {
                 val auth = DriveAuth.authorize(context)
                 val intent = auth.pendingIntent
                 if (auth.hasResolution() && intent != null) {
                     pending = action
+                    running = false
                     consent.launch(IntentSenderRequest.Builder(intent.intentSender).build())
                 } else {
                     proceed(action, auth.accessToken)
                 }
             } catch (e: ApiException) {
+                running = false
                 message = describeAuthFailure(e)
             } catch (e: Exception) {
-                message = "Could not reach Google: " + (e.message ?: "unknown error")
+                running = false
+                message = "Could not reach Google. Check your connection and try again."
             }
+        }
+    }
+
+    LaunchedEffect(retryAfterRejectedToken) {
+        if (retryAfterRejectedToken) {
+            retryAfterRejectedToken = false
+            requestAccess(PendingAction.BACK_UP_NOW)
         }
     }
 
@@ -146,17 +178,22 @@ fun BackupDialog(onDismiss: () -> Unit) {
                 )
 
                 val last = status.lastSuccessMillis
-                Text(
-                    if (last == null) {
-                        "No backups yet"
-                    } else {
-                        "Last backup: " +
-                            Instant.ofEpochMilli(last).atZone(ZoneId.systemDefault())
-                                .format(LAST_BACKUP_FORMAT) +
-                            (status.lastEntryCount?.let { "  ·  $it entries" } ?: "")
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (last == null) {
+                    Text("No backups yet", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    // The entry count gets its own line; appended to the date it wrapped mid-phrase.
+                    Column {
+                        Text(
+                            "Last backup: " +
+                                Instant.ofEpochMilli(last).atZone(ZoneId.systemDefault())
+                                    .format(LAST_BACKUP_FORMAT),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        status.lastEntryCount?.let { count ->
+                            Text("$count entries", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -187,7 +224,7 @@ fun BackupDialog(onDismiss: () -> Unit) {
 
                 // The latest outcome of this dialog wins; otherwise show what the last daily run
                 // reported, so an overnight failure is not silent.
-                val shown = message ?: status.lastError
+                val shown = message ?: status.lastError.takeUnless { attempted }
                 if (shown != null) {
                     Text(
                         shown,
@@ -202,7 +239,13 @@ fun BackupDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { requestAccess(PendingAction.BACK_UP_NOW) }, enabled = !running) {
+            TextButton(
+                onClick = {
+                    rejectedTokenRetried = false
+                    requestAccess(PendingAction.BACK_UP_NOW)
+                },
+                enabled = !running,
+            ) {
                 if (running) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
@@ -218,12 +261,13 @@ fun BackupDialog(onDismiss: () -> Unit) {
 
 // DEVELOPER_ERROR is what an unconfigured or mismatched OAuth client produces, and its raw text
 // is unhelpful, so it gets an explanation that points at the actual fix.
-private fun describeAuthFailure(e: ApiException): String =
-    if (e.statusCode == CommonStatusCodes.DEVELOPER_ERROR ||
-        e.message.orEmpty().contains("UNREGISTERED", ignoreCase = true)
-    ) {
+private fun describeAuthFailure(e: ApiException): String = when {
+    e.statusCode == CommonStatusCodes.CANCELED -> "Backup cancelled."
+    e.statusCode == CommonStatusCodes.NETWORK_ERROR ->
+        "Could not reach Google. Check your connection and try again."
+    e.statusCode == CommonStatusCodes.DEVELOPER_ERROR ||
+        e.message.orEmpty().contains("UNREGISTERED", ignoreCase = true) ->
         "Google rejected this build of the app. Check that an Android OAuth client exists in " +
             "Google Cloud with this app's package name and signing SHA-1."
-    } else {
-        "Google sign-in failed (" + e.statusCode + "): " + (e.message ?: "unknown error")
-    }
+    else -> "Google sign-in failed (error " + e.statusCode + "). Try again."
+}
