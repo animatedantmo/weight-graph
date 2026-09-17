@@ -64,6 +64,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -201,12 +202,22 @@ fun MainScreen(viewModel: WeightViewModel = viewModel()) {
                     },
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
-                Text(
-                    entries.size.toString() + " entries  ·  latest " +
-                        formatLb(newestFirst.first().weightLb) + " lb on " +
-                        formatUsDate(newestFirst.first().date),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        entries.size.toString() + " entries",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Latest " + formatLb(newestFirst.first().weightLb) + " lb on " +
+                            formatUsDate(newestFirst.first().date),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 HorizontalDivider()
                 LazyColumn(
                     state = listState,
